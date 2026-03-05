@@ -484,3 +484,19 @@ class JobSource:
 ## License
 
 MIT
+
+## Resume tab (multi-resume by job type)
+- Open `/dashboard` → **Resumes** tab.
+- Drag/drop or upload CV files (`.pdf`, `.docx`, `.txt`).
+- Assign each resume a **job type** (engineering, product, sales, etc.).
+- Set active resume per job type; matcher auto-selects that resume for relevant roles.
+
+### Resume APIs
+- `POST /api/resumes/upload` (multipart: file, name, job_type)
+- `GET /api/resumes`
+- `POST /api/resumes/{id}/activate` (json: `{ "job_type": "engineering" }`)
+- `DELETE /api/resumes/{id}`
+
+### File limits
+- Max upload size: 10MB
+- Parsing support: TXT (full), PDF/DOCX (best effort)

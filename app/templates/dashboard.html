@@ -529,6 +529,7 @@
             <button class="tab-btn active" data-tab="overview">📊 Overview</button>
             <button class="tab-btn" data-tab="platforms">🌐 Platforms</button>
             <button class="tab-btn" data-tab="sources">📡 Sources</button>
+            <button class="tab-btn" data-tab="resumes">🧾 Resumes</button>
             <button class="tab-btn" data-tab="jobs">💼 Jobs</button>
             <button class="tab-btn" data-tab="matches">🎯 Matches</button>
             <button class="tab-btn" data-tab="alerts">🔔 Alerts</button>
@@ -773,6 +774,83 @@
             </div>
         </div>
         
+        <!-- Resumes Tab -->
+        <div id="resumes" class="tab-content">
+            <div class="section">
+                <h2>🧾 Resume Library</h2>
+                <p style="font-size: 0.8rem; color: var(--muted); margin-bottom: 1rem;">
+                    Upload multiple resumes by job type. The matcher will use the active resume for that role category.
+                </p>
+                <div class="source-form" style="border: 2px dashed var(--border);" id="resume-dropzone">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Resume Name</label>
+                            <input type="text" id="resume-name" placeholder="Backend Resume v2">
+                        </div>
+                        <div class="form-group">
+                            <label>Job Type</label>
+                            <select id="resume-job-type">
+                                <option value="general">General</option>
+                                <option value="engineering">Engineering</option>
+                                <option value="product">Product</option>
+                                <option value="sales">Sales</option>
+                                <option value="marketing">Marketing</option>
+                                <option value="operations">Operations</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Upload CV (PDF/DOCX/TXT)</label>
+                        <input type="file" id="resume-file" accept=".pdf,.docx,.txt">
+                    </div>
+                    <button class="btn btn-primary" onclick="uploadResume()">⬆️ Upload Resume</button>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Saved Resumes</h2>
+                {% if resumes and resumes|length > 0 %}
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Job Type</th>
+                                <th>File</th>
+                                <th>Status</th>
+                                <th>Snippet</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in resumes %}
+                            <tr id="resume-row-{{ r.id }}">
+                                <td>{{ r.name }}</td>
+                                <td><span class="badge badge-info">{{ r.job_type }}</span></td>
+                                <td>{{ r.file_name }}</td>
+                                <td>
+                                    {% if r.is_active %}
+                                    <span class="badge badge-success">active</span>
+                                    {% else %}
+                                    <span class="badge badge-muted">inactive</span>
+                                    {% endif %}
+                                </td>
+                                <td class="truncate" title="{{ r.snippet }}">{{ r.snippet }}</td>
+                                <td class="action-btns">
+                                    <button class="btn btn-success btn-sm" onclick="activateResume({{ r.id }}, '{{ r.job_type }}')">✅ Active</button>
+                                    <button class="btn btn-danger btn-sm" onclick="deleteResume({{ r.id }})">🗑️</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="empty">No resumes uploaded yet.</div>
+                {% endif %}
+            </div>
+        </div>
+
         <!-- Jobs Tab -->
         <div id="jobs" class="tab-content">
             <div class="section">
@@ -902,6 +980,33 @@
             });
         });
         
+        // Resume drag/drop UX
+        const dropzone = document.getElementById('resume-dropzone');
+        const fileInput = document.getElementById('resume-file');
+        if (dropzone && fileInput) {
+            ['dragenter', 'dragover'].forEach(ev => {
+                dropzone.addEventListener(ev, (e) => {
+                    e.preventDefault();
+                    dropzone.style.borderColor = 'var(--primary)';
+                    dropzone.style.background = '#eef4ff';
+                });
+            });
+            ['dragleave', 'drop'].forEach(ev => {
+                dropzone.addEventListener(ev, (e) => {
+                    e.preventDefault();
+                    dropzone.style.borderColor = 'var(--border)';
+                    dropzone.style.background = '#f8fafc';
+                });
+            });
+            dropzone.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                if (dt?.files?.length) {
+                    fileInput.files = dt.files;
+                    showToast(`Selected ${dt.files[0].name}`);
+                }
+            });
+        }
+
         // Toast notification
         function showToast(message, type = 'success') {
             const toast = document.createElement('div');
@@ -1011,6 +1116,67 @@
             }
         }
         
+        async function uploadResume() {
+            const fileInput = document.getElementById('resume-file');
+            const name = document.getElementById('resume-name').value.trim();
+            const jobType = document.getElementById('resume-job-type').value;
+            if (!fileInput.files.length) {
+                showToast('Please choose a resume file', 'error');
+                return;
+            }
+            const fd = new FormData();
+            fd.append('file', fileInput.files[0]);
+            fd.append('name', name);
+            fd.append('job_type', jobType);
+            try {
+                const resp = await fetch('/api/resumes/upload', { method: 'POST', body: fd });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    showToast(data.detail || 'Upload failed', 'error');
+                    return;
+                }
+                showToast('Resume uploaded');
+                location.reload();
+            } catch (e) {
+                showToast('Upload error', 'error');
+            }
+        }
+
+        async function activateResume(id, jobType) {
+            try {
+                const resp = await fetch(`/api/resumes/${id}/activate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ job_type: jobType })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    showToast(err.detail || 'Failed to activate', 'error');
+                    return;
+                }
+                showToast('Active resume updated');
+                location.reload();
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
+
+        async function deleteResume(id) {
+            if (!confirm('Delete this resume?')) return;
+            try {
+                const resp = await fetch(`/api/resumes/${id}`, { method: 'DELETE' });
+                if (!resp.ok) {
+                    showToast('Failed to delete', 'error');
+                    return;
+                }
+                showToast('Resume deleted');
+                const row = document.getElementById(`resume-row-${id}`);
+                if (row) row.remove();
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
+
         // Add LinkedIn recruiter with config
         async function addLinkedInRecruiter() {
             const identifier = document.getElementById('linkedin-identifier').value.trim();

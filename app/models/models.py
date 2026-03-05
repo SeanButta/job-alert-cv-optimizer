@@ -20,6 +20,20 @@ class Resume(Base):
     content: Mapped[str] = mapped_column(Text)
 
 
+class ResumeProfile(Base):
+    __tablename__ = 'resume_profiles'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
+    name: Mapped[str] = mapped_column(String(255), default='Resume')
+    job_type: Mapped[str] = mapped_column(String(100), default='general', index=True)
+    file_name: Mapped[str] = mapped_column(String(255), default='resume.txt')
+    file_type: Mapped[str] = mapped_column(String(50), default='txt')
+    extracted_text: Mapped[str] = mapped_column(Text)
+    parser_note: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Preference(Base):
     __tablename__ = 'preferences'
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

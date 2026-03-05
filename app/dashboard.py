@@ -11,7 +11,7 @@ from sqlalchemy import select, func, desc
 from pathlib import Path
 
 from app.db.database import SessionLocal
-from app.models.models import JobPost, Match, Alert, GeneratedDoc, User, NotificationTask
+from app.models.models import JobPost, Match, Alert, GeneratedDoc, User, NotificationTask, ResumeProfile
 from app.models.sources import JobSource, SourceStatus
 from app.services.queue import get_queue_stats
 
@@ -111,6 +111,22 @@ def get_dashboard_data():
             for m in recent_matches_raw
         ]
 
+        # Resume profiles (for resume tab)
+        resumes = [
+            {
+                'id': r.id,
+                'name': r.name,
+                'job_type': r.job_type,
+                'file_name': r.file_name,
+                'file_type': r.file_type,
+                'is_active': r.is_active,
+                'parser_note': r.parser_note,
+                'snippet': (r.extracted_text or '')[:220],
+                'created_at': r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in db.scalars(select(ResumeProfile).order_by(desc(ResumeProfile.created_at)).limit(50)).all()
+        ]
+
         # Recent alerts with user/job info (last 30)
         alerts_query = (
             select(
@@ -151,6 +167,7 @@ def get_dashboard_data():
             'recent_jobs': recent_jobs,
             'recent_matches': recent_matches,
             'recent_alerts': recent_alerts,
+            'resumes': resumes,
         }
     finally:
         db.close()

@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from app.db.database import Base, engine, SessionLocal
-from app.models.models import User, Resume, Preference, JobPost, Match, Alert, GeneratedDoc
+from app.models.models import User, Resume, ResumeProfile, Preference, JobPost, Match, Alert, GeneratedDoc
 from app.models.sources import JobSource  # Import to register model
 from app.models.platform_settings import PlatformSetting  # Import to register model
 from app.adapters.ingestion import sample_telegram_posts, fetch_telegram_posts_real
@@ -23,6 +23,7 @@ from app.services.queue import enqueue_notification
 from app.dashboard import router as dashboard_router
 from app.api.sources import router as sources_router
 from app.api.platforms import router as platforms_router
+from app.api.resumes import router as resumes_router
 
 app = FastAPI(title='Job Alert CV Optimizer')
 Base.metadata.create_all(bind=engine)
@@ -31,6 +32,7 @@ Base.metadata.create_all(bind=engine)
 app.include_router(dashboard_router)
 app.include_router(sources_router)
 app.include_router(platforms_router)
+app.include_router(resumes_router)
 
 
 @app.get('/health')
@@ -40,13 +42,17 @@ def health():
 
 @app.post('/seed')
 def seed():
+    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         if not db.scalar(select(User).where(User.email == 'demo@example.com')):
             u = User(email='demo@example.com', phone='+15555550123', telegram_chat_id='demo-chat')
             db.add(u)
             db.flush()
-            db.add(Resume(user_id=u.id, content='5 years backend engineering, FastAPI, Python, APIs'))
+            base_resume = '5 years backend engineering, FastAPI, Python, APIs'
+            db.add(Resume(user_id=u.id, content=base_resume))
+            db.add(ResumeProfile(user_id=u.id, name='Default Engineering Resume', job_type='engineering', file_name='seed.txt', file_type='txt', extracted_text=base_resume, is_active=True))
+            db.add(ResumeProfile(user_id=u.id, name='General Resume', job_type='general', file_name='seed-general.txt', file_type='txt', extracted_text=base_resume, is_active=True))
             db.add(Preference(user_id=u.id, required_keywords='python,fastapi,sql', excluded_keywords='solidity', min_score=0.5))
             db.commit()
         return {'seeded': True}
@@ -54,8 +60,44 @@ def seed():
         db.close()
 
 
+def _infer_job_type(title: str, description: str) -> str:
+    text = f"{title} {description}".lower()
+    if any(k in text for k in ["backend", "python", "engineer", "developer"]):
+        return "engineering"
+    if any(k in text for k in ["product", "pm", "manager"]):
+        return "product"
+    if any(k in text for k in ["sales", "business development", "account executive"]):
+        return "sales"
+    return "general"
+
+
+def _get_resume_text(db, user_id: int, job_type: str) -> str:
+    # Prefer active resume profile for exact job_type, then general
+    row = db.scalar(
+        select(ResumeProfile).where(
+            ResumeProfile.user_id == user_id,
+            ResumeProfile.job_type == job_type,
+            ResumeProfile.is_active == True,
+        ).order_by(ResumeProfile.created_at.desc())
+    )
+    if not row:
+        row = db.scalar(
+            select(ResumeProfile).where(
+                ResumeProfile.user_id == user_id,
+                ResumeProfile.job_type == 'general',
+                ResumeProfile.is_active == True,
+            ).order_by(ResumeProfile.created_at.desc())
+        )
+    if row and row.extracted_text:
+        return row.extracted_text
+
+    legacy = db.scalar(select(Resume).where(Resume.user_id == user_id))
+    return legacy.content if legacy else ""
+
+
 @app.post('/run-demo')
 def run_demo():
+    Base.metadata.create_all(bind=engine)
     """
     Main demo flow with Phase 2 enhancements:
     - Strong dedupe (content_hash, link_hash)
@@ -73,7 +115,6 @@ def run_demo():
         if not user:
             return {'error': 'Run /seed first'}
 
-        resume = db.scalar(select(Resume).where(Resume.user_id == user.id))
         pref = db.scalar(select(Preference).where(Preference.user_id == user.id))
 
         use_real_ingest = os.getenv('ENABLE_REAL_TELEGRAM_INGEST', 'false').lower() == 'true'
@@ -104,16 +145,19 @@ def run_demo():
             db.add(job)
             db.flush()
 
+            job_type = _infer_job_type(job.title, job.description)
+            resume_text = _get_resume_text(db, user.id, job_type)
+
             # Score job
             base_score, base_explain = score_job(
-                job.description, resume.content,
+                job.description, resume_text,
                 pref.required_keywords, pref.excluded_keywords
             )
 
             # Optional LLM reranking
             score, explain, llm_reranked = rerank_match(
                 job.title, job.description,
-                resume.content,
+                resume_text,
                 base_score, base_explain,
             )
 
@@ -132,7 +176,7 @@ def run_demo():
             db.flush()
 
             # Generate CV recommendations and doc
-            rec = generate_cv_recommendations(job.title, job.description, resume.content)
+            rec = generate_cv_recommendations(job.title, job.description, resume_text)
             doc_url = create_or_update_google_doc(user.id, rec, title=f'CV Tailor - {job.title}')
             gd = GeneratedDoc(user_id=user.id, match_id=m.id, doc_url=doc_url)
             db.add(gd)
