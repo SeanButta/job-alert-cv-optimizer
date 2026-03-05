@@ -25,7 +25,7 @@ from app.api.sources import router as sources_router
 from app.api.platforms import router as platforms_router
 from app.api.resumes import router as resumes_router
 
-app = FastAPI(title='Job Alert CV Optimizer')
+app = FastAPI(title='My Recruiting Agent')
 Base.metadata.create_all(bind=engine)
 
 
@@ -286,7 +286,7 @@ def queue_stats():
 @app.post('/api/test/sms')
 def test_sms(
     phone: str = Query(..., description='Target phone in E.164 format, e.g. +15551234567'),
-    message: str = Query('Test SMS from Job Alert CV Optimizer ✅'),
+    message: str = Query('Test SMS from My Recruiting Agent ✅'),
     dry_run: bool = Query(False, description='When true, returns payload only and does not send'),
 ):
     """Quick connector verification endpoint for Twilio SMS."""
