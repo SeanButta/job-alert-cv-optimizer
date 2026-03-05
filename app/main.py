@@ -5,6 +5,7 @@ from sqlalchemy import select
 from app.db.database import Base, engine, SessionLocal
 from app.models.models import User, Resume, Preference, JobPost, Match, Alert, GeneratedDoc
 from app.models.sources import JobSource  # Import to register model
+from app.models.platform_settings import PlatformSetting  # Import to register model
 from app.adapters.ingestion import sample_telegram_posts, fetch_telegram_posts_real
 from app.services.matching import score_job
 from app.services.recommender import generate_cv_recommendations
@@ -21,6 +22,7 @@ from app.services.reranker import rerank_match
 from app.services.queue import enqueue_notification
 from app.dashboard import router as dashboard_router
 from app.api.sources import router as sources_router
+from app.api.platforms import router as platforms_router
 
 app = FastAPI(title='Job Alert CV Optimizer')
 Base.metadata.create_all(bind=engine)
@@ -28,6 +30,7 @@ Base.metadata.create_all(bind=engine)
 # Include routers
 app.include_router(dashboard_router)
 app.include_router(sources_router)
+app.include_router(platforms_router)
 
 
 @app.get('/health')

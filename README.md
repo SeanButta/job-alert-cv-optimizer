@@ -5,7 +5,9 @@ Automated job alert + CV optimization MVP.
 ## What it does
 
 - Ingests job posts from multiple configurable sources (Telegram channels, websites, LinkedIn recruiters).
+- **NEW: 16 job platform integrations** with toggleable enable/disable per platform.
 - Normalizes and deduplicates jobs by `external_id`, content hash, and link hash.
+- **NEW: Weighted scoring model** with skills, title, seniority, location components + explainability.
 - Matches listings against resume + preferences with optional LLM reranking.
 - Sends alerts through pluggable channels: email, SMS, Telegram, WhatsApp.
 - Supports async queue-based notifications with retry and backoff.
@@ -18,9 +20,88 @@ Automated job alert + CV optimization MVP.
 - Jinja2 for dashboard templating
 - Optional: OpenAI/Anthropic for LLM reranking
 
+## Job Platforms (Ranked by Quality)
+
+Platforms are ranked by data quality, freshness, and signal-to-noise ratio. Priority 1 = best sources (polled first).
+
+| Priority | Platform | Description | Default |
+|----------|----------|-------------|---------|
+| 1 | **Y Combinator Work at a Startup** | Curated jobs from YC-backed startups with strong growth potential. | ✅ On |
+| 2 | **Wellfound (AngelList Talent)** | Startup jobs with salary transparency and equity details upfront. | ✅ On |
+| 3 | **a16z Talent** | Jobs from Andreessen Horowitz portfolio companies. | ✅ On |
+| 4 | **VC Portfolio Boards** | Aggregated jobs from Sequoia, Greylock, and other top VC portfolios. | ✅ On |
+| 5 | **Otta** | Personalized startup job matches with company culture insights. | ✅ On |
+| 6 | **Built In** | Tech jobs with detailed company profiles and local market focus. | ✅ On |
+| 7 | **Remote OK** | Verified remote jobs with salary data and company remote-work culture. | ✅ On |
+| 8 | **We Work Remotely** | Largest remote work community with quality-vetted listings. | ✅ On |
+| 9 | **Remotive** | Hand-picked remote jobs in tech, marketing, and customer support. | ✅ On |
+| 10 | **Working Nomads** | Remote jobs curated for digital nomads and location-independent workers. | ❌ Off |
+| 11 | **FlexJobs** | Vetted remote and flexible jobs, subscription-based with manual feed mode. | ❌ Off |
+| 12 | **LinkedIn Jobs** | Massive job marketplace with company insights and easy apply options. | ❌ Off |
+| 13 | **Glassdoor** | Job listings paired with company reviews and salary reports. | ❌ Off |
+| 14 | **Indeed** | World's largest job aggregator with broad coverage across industries. | ❌ Off |
+| 15 | **ZipRecruiter** | AI-powered job matching with one-click apply across multiple boards. | ❌ Off |
+| 16 | **Google Jobs** | Aggregated job search across multiple sources via Google's index. | ❌ Off |
+
+> **Tip:** Enable startup-focused boards (1-6) for best signal-to-noise. Large aggregators (12-16) have high volume but more noise.
+
+## Scoring Formula
+
+Jobs are scored against user CVs using a **deterministic weighted model** with optional LLM adjustment:
+
+```
+score = (
+    0.40 × skills_overlap +
+    0.25 × title_alignment +
+    0.20 × seniority_fit +
+    0.15 × location_fit
+) × (1 - exclusion_penalty) × llm_adjustment
+```
+
+### Score Components
+
+| Component | Weight | Description |
+|-----------|--------|-------------|
+| **Skills Overlap** | 40% | Overlap between job requirements and CV skills (keywords, tech stack) |
+| **Title Alignment** | 25% | Job title match to CV experience and target roles |
+| **Seniority Fit** | 20% | Level alignment: intern → junior → mid → senior → staff → director → C-level |
+| **Location Fit** | 15% | Remote/hybrid/location compatibility with user preferences |
+| **Exclusion Penalty** | 0 or 100% | Any excluded keyword found = score becomes 0 |
+| **LLM Adjustment** | 0.5-1.5× | Optional AI rerank (requires `ENABLE_LLM_RERANKER=true`) |
+
+### Score Breakdown Example
+
+```json
+{
+  "total_score": 0.78,
+  "components": {
+    "skills": {"score": 0.85, "matched": ["python", "fastapi", "sql"], "missing": ["kubernetes"]},
+    "title": {"score": 0.70, "reason": "Related domain: engineer"},
+    "seniority": {"score": 0.80, "job_level": "senior", "cv_level": "mid", "reason": "Close match"},
+    "location": {"score": 1.0, "reason": "Remote role matches preference"}
+  },
+  "exclusion_penalty": 0.0,
+  "excluded_found": [],
+  "llm_adjustment": 1.0
+}
+```
+
 ## Architecture
 
 ```
+┌─────────────────────────────────────────────────────────────┐
+│                    Job Platforms (16 sources)               │
+│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌──────────┐  │
+│  │ YC Startup │ │ Wellfound  │ │   Otta     │ │Remote OK │  │
+│  │ a16z       │ │ Built In   │ │ LinkedIn   │ │  Indeed  │  │
+│  └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ └────┬─────┘  │
+└────────┼──────────────┼──────────────┼─────────────┼────────┘
+         │              │              │             │
+         ▼              ▼              ▼             ▼
+┌─────────────────────────────────────────────────────────────┐
+│            Platform Adapters (priority-ordered polling)     │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
 ┌─────────────────────────────────────────────────────────────┐
 │                    Job Sources (User-Configurable)          │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────┐  │
@@ -32,7 +113,7 @@ Automated job alert + CV optimization MVP.
           ▼                 ▼                    ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              Source Poller Worker (Background)              │
-│  - Polls enabled sources periodically                       │
+│  - Polls enabled sources by platform priority               │
 │  - Tags jobs with recruiter info when matched               │
 │  - Integrates with dedupe pipeline                          │
 └─────────────────────────┬───────────────────────────────────┘
@@ -45,8 +126,8 @@ Automated job alert + CV optimization MVP.
                                                           │
                                                           ▼
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  CV Generator   │◀────│   Matcher        │◀────│   User Prefs    │
-│  (Docs API)     │     │   + LLM Rerank   │     │                 │
+│  CV Generator   │◀────│   Scorer         │◀────│   User Prefs    │
+│  (Docs API)     │     │   (weighted)     │     │                 │
 └────────┬────────┘     └────────┬─────────┘     └─────────────────┘
          │                       │
          ▼                       ▼
@@ -89,11 +170,50 @@ curl -X POST http://127.0.0.1:8000/seed
 # Run demo flow (ingest -> match -> notify)
 curl -X POST http://127.0.0.1:8000/run-demo
 
-# View dashboard (includes source management)
+# View dashboard (includes platform toggles + source management)
 open http://127.0.0.1:8000/dashboard
 
 # Check queue stats
 curl http://127.0.0.1:8000/queue-stats
+```
+
+## Platform Management API
+
+```bash
+# List all platforms with settings
+curl http://127.0.0.1:8000/api/platforms
+
+# Get platform priority order
+curl http://127.0.0.1:8000/api/platforms/priority
+
+# Enable a platform
+curl -X POST http://127.0.0.1:8000/api/platforms/linkedin_jobs/enable
+
+# Disable a platform
+curl -X POST http://127.0.0.1:8000/api/platforms/indeed/disable
+
+# Get single platform info
+curl http://127.0.0.1:8000/api/platforms/wellfound
+```
+
+## Scoring API
+
+```bash
+# Score a job against CV
+curl -X POST http://127.0.0.1:8000/api/score \
+  -H "Content-Type: application/json" \
+  -d '{
+    "job_title": "Senior Python Engineer",
+    "job_description": "Python, FastAPI, SQL developer needed. Remote.",
+    "job_company": "TechCorp",
+    "cv_text": "Senior Python developer with FastAPI and SQL experience",
+    "required_keywords": ["python"],
+    "excluded_keywords": ["solidity"],
+    "user_prefers_remote": true
+  }'
+
+# Get scoring weights and formula
+curl http://127.0.0.1:8000/api/score/weights
 ```
 
 ## Workers
@@ -138,11 +258,18 @@ Environment variables for source polling:
 Access the mobile-friendly dashboard at `/dashboard`:
 
 **Tabs:**
-- **Overview**: Stats, queue status
-- **Sources**: Add/edit/delete job sources with activate/deactivate controls
+- **Overview**: Stats, queue status, scoring formula
+- **Platforms**: Toggle job platforms on/off, see descriptions and status
+- **Sources**: Add/edit/delete custom sources (Telegram, websites)
 - **Jobs**: Recent ingested job posts
 - **Matches**: Matches with scores and doc links
 - **Alerts**: Notification statuses per channel
+
+**Platform Management UI:**
+- Toggle switches for each platform
+- One-sentence description for each platform
+- Status indicator (enabled/disabled, last checked)
+- Priority ranking displayed
 
 **Source Management UI:**
 - Add Telegram channels (paste `@channel` or `t.me/channel` link)
@@ -154,16 +281,28 @@ Access the mobile-friendly dashboard at `/dashboard`:
 
 JSON API available at `/api/dashboard`.
 
-## Phase 3 & 4 Features: User-Configurable Sources
+## Phase 5 Features: Platform Toggles & Scoring
 
-### Job Source Types
+### Platform Toggle Settings
 
 | Type | Description | Polling | Notes |
 |------|-------------|---------|-------|
-| `telegram_public` | **Telegram public channels** | Active | **No bot required!** ✅ |
-| `telegram_channel` | Telegram channels/groups | Active | Requires bot in channel |
-| `website` | Web pages with job listings | Active | Basic HTML parsing scaffold |
-| `linkedin_recruiter` | LinkedIn recruiter tracking | Passive | Tags jobs from other sources |
+| `wellfound` | Wellfound (AngelList Talent) | Active | Startup jobs |
+| `yc_work_at_startup` | YC Work at a Startup | Active | YC portfolio |
+| `otta` | Otta | Active | Requires auth |
+| `built_in` | Built In | Active | Local tech hubs |
+| `a16z_talent` | a16z Talent | Active | a16z portfolio |
+| `vc_portfolio_boards` | VC Portfolio Boards | Active | Generic VC adapter |
+| `linkedin_jobs` | LinkedIn Jobs | Active | Compliance-sensitive |
+| `indeed` | Indeed | Active | High volume |
+| `ziprecruiter` | ZipRecruiter | Active | Requires auth |
+| `glassdoor` | Glassdoor | Active | Requires auth |
+| `google_jobs` | Google Jobs | Aggregator | May duplicate |
+| `remote_ok` | Remote OK | RSS feed | Remote jobs |
+| `we_work_remotely` | We Work Remotely | RSS feed | Remote jobs |
+| `flexjobs` | FlexJobs | Manual | Subscription |
+| `remotive` | Remotive | RSS feed | Remote jobs |
+| `working_nomads` | Working Nomads | RSS feed | Digital nomads |
 
 ### Source Management API
 
@@ -199,97 +338,6 @@ curl -X POST http://127.0.0.1:8000/api/sources/1/test
 # Delete source
 curl -X DELETE http://127.0.0.1:8000/api/sources/1
 ```
-
-### Telegram Public Channel Source (Recommended) ✅
-
-**No bot token required!** This adapter fetches posts directly from the public web preview.
-
-**Setup:**
-1. Add any public Telegram channel in the dashboard
-2. That's it! No bot needed.
-
-**Supported identifier formats:**
-- `@channelname`
-- `channelname`
-- `t.me/channelname`
-- `https://t.me/channelname`
-- `https://t.me/s/channelname` (canonical format)
-
-All formats are automatically normalized to `https://t.me/s/<channel>`.
-
-**Limitations:**
-- Only works with **public** channels
-- Fetches ~20 most recent posts per poll
-- May be rate-limited by Telegram (use reasonable poll intervals)
-- HTML parsing may break if Telegram changes their format
-
-**Example API calls:**
-```bash
-# Add a public channel
-curl -X POST http://127.0.0.1:8000/api/sources \
-  -H "Content-Type: application/json" \
-  -d '{"type": "telegram_public", "identifier": "@python_jobs"}'
-
-# Test connectivity
-curl -X POST http://127.0.0.1:8000/api/sources/1/test
-```
-
-### Telegram Channel Source (Bot Mode)
-
-For private channels or when you need real-time updates via webhooks.
-
-**Setup:**
-1. Create a Telegram bot via @BotFather
-2. Set `TELEGRAM_BOT_TOKEN` environment variable
-3. Add bot to your job channel as admin
-4. Add channel in dashboard: `@channelname` or `t.me/channelname`
-
-**Limitations:**
-- Bot only sees messages sent after being added
-- `getUpdates` has 100-message limit per call
-- For high-volume channels, consider webhooks (not yet implemented)
-- Private channels require invite link or numeric ID
-
-**Identifier formats:**
-- `@channelname`
-- `t.me/channelname`
-- `https://t.me/channelname`
-- `-1001234567890` (numeric ID)
-
-### Website Source
-
-**Setup:**
-1. Add website URL in dashboard
-2. Configure selectors in config JSON (optional)
-
-**Current limitations (scaffold implementation):**
-- Basic HTML link extraction only
-- No JavaScript rendering (SPAs won't work)
-- May be blocked by anti-bot measures
-- Respects basic rate limiting
-
-**Production upgrade path:**
-- Add BeautifulSoup/lxml for proper HTML parsing
-- Add Playwright for JavaScript rendering
-- Add rotating proxies for blocked sites
-- Add site-specific adapters for major job boards
-
-### LinkedIn Recruiter Tracking
-
-**Compliance-safe mode:**
-- Does NOT scrape LinkedIn (ToS violation)
-- Passively tags jobs from other sources when recruiter name/company matches
-- Stores recruiter metadata for manual tracking
-
-**Setup:**
-1. Add recruiter profile URL or name in dashboard
-2. Optionally set company name in config
-3. Jobs mentioning the recruiter's company will be auto-tagged
-
-**How it works:**
-- When source poller ingests jobs from Telegram/website sources
-- It checks if job description or company matches tracked recruiters
-- Matching jobs get `[Recruiter: Name]` prefix in description
 
 ## Phase 2 Features
 
@@ -342,16 +390,21 @@ Optional LLM-based match reranking (disabled by default):
 
 | File | Purpose |
 |------|---------|
+| `app/models/platforms.py` | **NEW: Platform definitions and priority ranking** |
+| `app/models/platform_settings.py` | **NEW: Platform toggle settings model** |
+| `app/api/platforms.py` | **NEW: Platform toggle + scoring API** |
+| `app/services/scoring.py` | **NEW: Weighted scoring model with explainability** |
+| `app/adapters/platform_adapters.py` | **NEW: Platform adapters (scaffolds)** |
 | `app/adapters/ingestion.py` | Legacy Telegram adapter |
-| `app/adapters/source_adapters.py` | Source adapters for all source types (includes `TelegramPublicAdapter`) |
+| `app/adapters/source_adapters.py` | Source adapters for Telegram/website/LinkedIn |
 | `app/api/sources.py` | Source CRUD API |
-| `app/models/sources.py` | JobSource data model (includes `telegram_public` type) |
+| `app/models/sources.py` | JobSource data model |
 | `app/services/source_poller.py` | Background source polling worker |
-| `app/services/matching.py` | Customize scoring logic |
-| `app/services/reranker.py` | Tune LLM prompts |
-| `app/services/notifier.py` | Add notification channels |
-| `app/services/docs.py` | Customize doc templates |
-| `app/templates/dashboard.html` | Dashboard UI with source management |
+| `app/services/matching.py` | Legacy scoring (now wraps scoring.py) |
+| `app/services/reranker.py` | LLM prompts |
+| `app/services/notifier.py` | Notification channels |
+| `app/services/docs.py` | Doc templates |
+| `app/templates/dashboard.html` | Dashboard UI with platform toggles |
 
 ## Testing
 
@@ -360,10 +413,12 @@ Optional LLM-based match reranking (disabled by default):
 python3 -m pytest -v
 
 # Run specific test files
+python3 -m pytest tests/test_platforms.py -v   # NEW: Platform tests
+python3 -m pytest tests/test_scoring.py -v     # NEW: Scoring tests
 python3 -m pytest tests/test_dedupe.py -v
 python3 -m pytest tests/test_queue.py -v
 python3 -m pytest tests/test_reranker.py -v
-python3 -m pytest tests/test_sources.py -v  # NEW: Source tests
+python3 -m pytest tests/test_sources.py -v
 
 # Run with coverage
 python3 -m pytest --cov=app --cov-report=term-missing
@@ -379,21 +434,43 @@ python3 -m pytest --cov=app --cov-report=term-missing
 | GET | `/queue-stats` | Get notification queue statistics |
 | GET | `/dashboard` | Mobile-friendly HTML dashboard |
 | GET | `/api/dashboard` | Dashboard data as JSON |
-| **GET** | `/api/sources` | **List all sources** |
-| **POST** | `/api/sources` | **Create new source** |
-| **GET** | `/api/sources/{id}` | **Get source by ID** |
-| **PUT** | `/api/sources/{id}` | **Update source** |
-| **DELETE** | `/api/sources/{id}` | **Delete source** |
-| **POST** | `/api/sources/{id}/activate` | **Activate source** |
-| **POST** | `/api/sources/{id}/deactivate` | **Deactivate source** |
-| **POST** | `/api/sources/{id}/test` | **Test source connectivity** |
+| **GET** | `/api/platforms` | **List all platforms with settings** |
+| **GET** | `/api/platforms/priority` | **Get priority-ordered platform list** |
+| **GET** | `/api/platforms/{platform}` | **Get single platform info** |
+| **POST** | `/api/platforms/{platform}/enable` | **Enable platform** |
+| **POST** | `/api/platforms/{platform}/disable` | **Disable platform** |
+| **POST** | `/api/score` | **Score job against CV with breakdown** |
+| **GET** | `/api/score/weights` | **Get scoring weights and formula** |
+| GET | `/api/sources` | List all sources |
+| POST | `/api/sources` | Create new source |
+| GET | `/api/sources/{id}` | Get source by ID |
+| PUT | `/api/sources/{id}` | Update source |
+| DELETE | `/api/sources/{id}` | Delete source |
+| POST | `/api/sources/{id}/activate` | Activate source |
+| POST | `/api/sources/{id}/deactivate` | Deactivate source |
+| POST | `/api/sources/{id}/test` | Test source connectivity |
 
-## Data Model: JobSource
+## Data Models
+
+### PlatformSetting
+
+```python
+class PlatformSetting:
+    id: int
+    platform: str          # Platform type (wellfound, linkedin_jobs, etc.)
+    enabled: bool          # Whether platform is enabled for polling
+    user_id: int | None    # Owner (NULL = global setting)
+    last_checked: datetime # Last successful check
+    last_error: str | None # Last error message
+    error_count: int       # Consecutive errors
+```
+
+### JobSource
 
 ```python
 class JobSource:
     id: int
-    type: str              # telegram_channel | website | linkedin_recruiter
+    type: str              # telegram_channel | telegram_public | website | linkedin_recruiter
     identifier: str        # Channel/URL/profile identifier
     name: str              # Display name
     status: str            # active | inactive | error
@@ -402,8 +479,6 @@ class JobSource:
     last_checked: datetime # Last successful check
     last_error: str | None # Last error message
     error_count: int       # Consecutive errors (resets on success)
-    created_at: datetime
-    updated_at: datetime
 ```
 
 ## License

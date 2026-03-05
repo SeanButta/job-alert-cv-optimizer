@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal
 from app.models.sources import JobSource, SourceType, SourceStatus
+from app.models.platform_settings import PlatformSetting
+from app.models.platforms import PLATFORMS, PlatformType, get_platforms_by_priority
 from app.models.models import JobPost
 from app.adapters.source_adapters import fetch_from_source, get_adapter, LinkedInRecruiterAdapter
 from app.services.dedupe import compute_content_hash, compute_link_hash, is_duplicate_job
@@ -37,11 +39,35 @@ def get_active_sources(db: Session, source_type: Optional[str] = None) -> list:
     return list(db.scalars(query).all())
 
 
+def get_enabled_platforms(db: Session, user_id: Optional[int] = None) -> set:
+    """Get set of enabled platform types."""
+    # Get platform settings
+    query = select(PlatformSetting).where(PlatformSetting.enabled == True)
+    if user_id is not None:
+        query = query.where(PlatformSetting.user_id == user_id)
+    else:
+        query = query.where(PlatformSetting.user_id == None)
+    
+    settings = db.scalars(query).all()
+    enabled = {s.platform for s in settings}
+    
+    # Add default-enabled platforms that don't have explicit settings
+    for platform_info in PLATFORMS.values():
+        if platform_info.default_enabled:
+            # Check if there's an explicit disable
+            has_setting = any(s.platform == platform_info.type.value for s in settings)
+            if not has_setting:
+                enabled.add(platform_info.type.value)
+    
+    return enabled
+
+
 def get_sources_due_for_check(
     db: Session,
-    min_interval_seconds: int = MIN_CHECK_INTERVAL
+    min_interval_seconds: int = MIN_CHECK_INTERVAL,
+    user_id: Optional[int] = None
 ) -> list:
-    """Get active sources that are due for a check."""
+    """Get active sources that are due for a check, ordered by platform priority."""
     cutoff = datetime.utcnow() - timedelta(seconds=min_interval_seconds)
     
     # Active source types that should be polled
@@ -64,7 +90,26 @@ def get_sources_due_for_check(
         .order_by(JobSource.last_checked.asc().nullsfirst())
     )
     
-    return list(db.scalars(query).all())
+    sources = list(db.scalars(query).all())
+    
+    # Sort by platform priority (best platforms first)
+    # For traditional sources (telegram/website), use a default priority
+    # Future: map source types to platform types
+    priority_order = {p.type.value: p.priority for p in PLATFORMS.values()}
+    default_priority = 50  # Traditional sources get mid-priority
+    
+    def get_source_priority(source: JobSource) -> int:
+        # Map source type to approximate platform priority
+        source_to_platform = {
+            'telegram_public': 'wellfound',  # Treat telegram sources as mid-priority
+            'telegram_channel': 'wellfound',
+            'website': 'built_in',
+        }
+        mapped = source_to_platform.get(source.type)
+        return priority_order.get(mapped, default_priority)
+    
+    sources.sort(key=get_source_priority)
+    return sources
 
 
 def get_linkedin_recruiters(db: Session) -> dict:

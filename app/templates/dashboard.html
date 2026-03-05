@@ -306,6 +306,141 @@
             gap: 0.25rem;
         }
         
+        /* Toggle switch */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+        
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .3s;
+            border-radius: 24px;
+        }
+        
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+        
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: var(--success);
+        }
+        
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(20px);
+        }
+        
+        /* Platform card */
+        .platform-card {
+            display: flex;
+            align-items: flex-start;
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border);
+            gap: 0.75rem;
+        }
+        
+        .platform-card:last-child {
+            border-bottom: none;
+        }
+        
+        .platform-toggle {
+            flex-shrink: 0;
+            padding-top: 0.25rem;
+        }
+        
+        .platform-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .platform-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .platform-desc {
+            font-size: 0.8rem;
+            color: var(--muted);
+            margin-top: 0.25rem;
+        }
+        
+        .platform-status {
+            flex-shrink: 0;
+            text-align: right;
+            font-size: 0.75rem;
+        }
+        
+        .platform-status .last-check {
+            color: var(--muted);
+        }
+        
+        .priority-badge {
+            font-size: 0.65rem;
+            padding: 0.1rem 0.4rem;
+            background: #f1f5f9;
+            border-radius: 4px;
+            color: var(--muted);
+        }
+        
+        /* Score breakdown */
+        .score-breakdown {
+            background: #f8fafc;
+            border-radius: 6px;
+            padding: 0.75rem;
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+        }
+        
+        .score-component {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.25rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .score-component:last-child {
+            border-bottom: none;
+        }
+        
+        .score-bar {
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            margin-top: 0.25rem;
+            overflow: hidden;
+        }
+        
+        .score-bar-fill {
+            height: 100%;
+            background: var(--primary);
+            border-radius: 2px;
+        }
+        
         /* Toast notifications */
         .toast {
             position: fixed;
@@ -369,6 +504,16 @@
             .tab-btn {
                 white-space: nowrap;
             }
+            
+            .platform-card {
+                flex-wrap: wrap;
+            }
+            
+            .platform-status {
+                width: 100%;
+                text-align: left;
+                margin-top: 0.5rem;
+            }
         }
     </style>
 </head>
@@ -382,6 +527,7 @@
         <!-- Tab Navigation -->
         <div class="tabs">
             <button class="tab-btn active" data-tab="overview">📊 Overview</button>
+            <button class="tab-btn" data-tab="platforms">🌐 Platforms</button>
             <button class="tab-btn" data-tab="sources">📡 Sources</button>
             <button class="tab-btn" data-tab="jobs">💼 Jobs</button>
             <button class="tab-btn" data-tab="matches">🎯 Matches</button>
@@ -442,6 +588,42 @@
                         <div class="label">Retry Pending</div>
                         <div class="value">{{ queue_stats.retry_pending }}</div>
                     </div>
+                </div>
+            </div>
+            
+            <!-- Scoring Formula -->
+            <div class="section">
+                <h2>📊 Match Scoring Formula</h2>
+                <div class="source-form">
+                    <p style="font-size: 0.85rem; margin-bottom: 0.5rem;">
+                        <strong>Score = </strong>
+                        <code>(40% Skills + 25% Title + 20% Seniority + 15% Location) × (1 - Exclusion) × LLM</code>
+                    </p>
+                    <div style="font-size: 0.8rem; color: var(--muted);">
+                        <strong>Components:</strong>
+                        <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+                            <li><strong>Skills (40%)</strong>: Overlap between job requirements and CV skills</li>
+                            <li><strong>Title (25%)</strong>: Job title alignment with CV experience</li>
+                            <li><strong>Seniority (20%)</strong>: Level fit (intern → C-level)</li>
+                            <li><strong>Location (15%)</strong>: Remote/location compatibility</li>
+                            <li><strong>Exclusion</strong>: Blocked keywords = 0 score</li>
+                            <li><strong>LLM</strong>: Optional AI adjustment (0.5-1.5x)</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Platforms Tab -->
+        <div id="platforms" class="tab-content">
+            <div class="section">
+                <h2>🌐 Job Platform Sources</h2>
+                <p style="font-size: 0.8rem; color: var(--muted); margin-bottom: 1rem;">
+                    Toggle platforms on/off for job ingestion. Platforms are ranked by data quality (best first).
+                </p>
+                <div id="platforms-list">
+                    <!-- Populated by JS -->
+                    <div class="empty">Loading platforms...</div>
                 </div>
             </div>
         </div>
@@ -712,6 +894,11 @@
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
                 btn.classList.add('active');
                 document.getElementById(btn.dataset.tab).classList.add('active');
+                
+                // Load platforms when tab is clicked
+                if (btn.dataset.tab === 'platforms') {
+                    loadPlatforms();
+                }
             });
         });
         
@@ -722,6 +909,65 @@
             toast.textContent = message;
             document.body.appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
+        }
+        
+        // Load platforms list
+        async function loadPlatforms() {
+            const container = document.getElementById('platforms-list');
+            try {
+                const resp = await fetch('/api/platforms');
+                const data = await resp.json();
+                
+                if (data.platforms && data.platforms.length > 0) {
+                    container.innerHTML = data.platforms.map(p => `
+                        <div class="platform-card" id="platform-${p.type}">
+                            <div class="platform-toggle">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" ${p.enabled ? 'checked' : ''} 
+                                           onchange="togglePlatform('${p.type}', this.checked)">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="platform-info">
+                                <div class="platform-name">
+                                    ${p.name}
+                                    <span class="priority-badge">#${p.priority}</span>
+                                    ${p.requires_auth ? '<span class="badge badge-warning">Auth</span>' : ''}
+                                </div>
+                                <div class="platform-desc">${p.description}</div>
+                            </div>
+                            <div class="platform-status">
+                                <span class="badge ${p.enabled ? 'badge-success' : 'badge-muted'}">
+                                    ${p.enabled ? 'Enabled' : 'Disabled'}
+                                </span>
+                                ${p.last_checked ? `<div class="last-check">Last: ${p.last_checked.slice(0,16)}</div>` : ''}
+                                ${p.error_count > 0 ? `<div class="badge badge-danger">${p.error_count} errors</div>` : ''}
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = '<div class="empty">No platforms configured</div>';
+                }
+            } catch (e) {
+                container.innerHTML = '<div class="empty">Error loading platforms</div>';
+                console.error('Failed to load platforms:', e);
+            }
+        }
+        
+        // Toggle platform on/off
+        async function togglePlatform(platform, enabled) {
+            const action = enabled ? 'enable' : 'disable';
+            try {
+                const resp = await fetch(`/api/platforms/${platform}/${action}`, { method: 'POST' });
+                if (resp.ok) {
+                    showToast(`Platform ${enabled ? 'enabled' : 'disabled'}`);
+                    loadPlatforms(); // Refresh
+                } else {
+                    showToast('Failed to update platform', 'error');
+                }
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
         }
         
         // Add source (Telegram, Telegram Public, or Website)
