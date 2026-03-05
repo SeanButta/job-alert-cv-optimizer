@@ -8,6 +8,7 @@ from app.models.sources import JobSource  # Import to register model
 from app.models.platform_settings import PlatformSetting  # Import to register model
 from app.adapters.ingestion import sample_telegram_posts, fetch_telegram_posts_real
 from app.services.matching import score_job
+from app.services.scoring import compute_match_score
 from app.services.recommender import generate_cv_recommendations
 from app.services.docs import create_or_update_google_doc
 from app.services.notifier import build_alert, dispatch_all
@@ -179,11 +180,23 @@ def run_demo():
             job_type = _infer_job_type(job.title, job.description)
             resume_text = _get_resume_text(db, user.id, job_type)
 
-            # Score job
-            base_score, base_explain = score_job(
-                job.description, resume_text,
-                pref.required_keywords, pref.excluded_keywords
+            required = [k.strip() for k in (pref.required_keywords or '').split(',') if k.strip()]
+            excluded = [k.strip() for k in (pref.excluded_keywords or '').split(',') if k.strip()]
+            preferred_locations = [x.strip() for x in (pref.preferred_locations or '').split(',') if x.strip()]
+
+            breakdown = compute_match_score(
+                job_title=job.title,
+                job_description=job.description,
+                job_company=job.company,
+                cv_text=resume_text,
+                required_keywords=required,
+                excluded_keywords=excluded,
+                user_prefers_remote=bool(pref.remote_only),
+                remote_only=bool(pref.remote_only),
+                preferred_locations=preferred_locations,
             )
+            base_score = breakdown.total_score
+            base_explain = breakdown.to_explanation_string()
 
             # Optional LLM reranking
             score, explain, llm_reranked = rerank_match(
@@ -191,16 +204,6 @@ def run_demo():
                 resume_text,
                 base_score, base_explain,
             )
-
-            # Apply preference gates: remote-only + preferred locations
-            if pref.remote_only and (job.remote_type or '').lower() != 'remote':
-                continue
-
-            if (pref.preferred_locations or '').strip():
-                preferred = [x.strip().lower() for x in pref.preferred_locations.split(',') if x.strip()]
-                loc = (job.location or '').lower()
-                if preferred and not any(p in loc for p in preferred):
-                    continue
 
             if score < pref.min_score:
                 continue
