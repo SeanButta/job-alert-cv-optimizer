@@ -17,6 +17,7 @@ from app.db.database import Base
 class SourceType(str, PyEnum):
     """Supported job source types."""
     TELEGRAM_CHANNEL = "telegram_channel"
+    TELEGRAM_PUBLIC = "telegram_public"  # No bot token required
     WEBSITE = "website"
     LINKEDIN_RECRUITER = "linkedin_recruiter"
 

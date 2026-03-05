@@ -44,12 +44,20 @@ def get_sources_due_for_check(
     """Get active sources that are due for a check."""
     cutoff = datetime.utcnow() - timedelta(seconds=min_interval_seconds)
     
+    # Active source types that should be polled
+    # (linkedin_recruiter is passive - only used for tagging)
+    active_source_types = [
+        SourceType.TELEGRAM_CHANNEL.value,
+        SourceType.TELEGRAM_PUBLIC.value,
+        SourceType.WEBSITE.value,
+    ]
+    
     query = (
         select(JobSource)
         .where(
             JobSource.status == SourceStatus.ACTIVE.value,
-            # Exclude linkedin_recruiter from active polling (it's passive)
-            JobSource.type != SourceType.LINKEDIN_RECRUITER.value,
+            # Only poll active source types
+            JobSource.type.in_(active_source_types),
             # Due for check: never checked or last check > interval ago
             (JobSource.last_checked == None) | (JobSource.last_checked < cutoff)
         )

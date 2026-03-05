@@ -7,7 +7,8 @@ Each adapter handles:
 - Parsing and normalizing data
 
 Adapters:
-- TelegramChannelAdapter: Telegram channels/groups
+- TelegramChannelAdapter: Telegram channels/groups (requires bot token)
+- TelegramPublicAdapter: Telegram public channels (no bot token required)
 - WebsiteAdapter: Web page scraping (scaffold)
 - LinkedInRecruiterAdapter: LinkedIn recruiter tracking (compliance-safe scaffold)
 """
@@ -26,6 +27,61 @@ import requests
 from app.models.sources import JobSource, SourceType, SourceStatus
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_telegram_public_url(identifier: str) -> str:
+    """
+    Normalize various Telegram channel identifier formats to canonical public URL.
+    
+    Accepts:
+        - @channel
+        - channel
+        - t.me/channel
+        - https://t.me/channel
+        - https://t.me/s/channel
+    
+    Returns:
+        https://t.me/s/<channel>
+    """
+    identifier = identifier.strip()
+    
+    # Already a full t.me/s/ URL
+    if re.match(r'^https?://t\.me/s/[^/\s]+$', identifier):
+        return identifier
+    
+    # t.me/s/ without protocol
+    if re.match(r'^t\.me/s/[^/\s]+$', identifier):
+        return f'https://{identifier}'
+    
+    # Full t.me URL (without /s/)
+    match = re.match(r'^https?://t\.me/([^/\s]+)/?$', identifier)
+    if match:
+        channel = match.group(1)
+        return f'https://t.me/s/{channel}'
+    
+    # t.me/channel without protocol
+    match = re.match(r'^t\.me/([^/\s]+)/?$', identifier)
+    if match:
+        channel = match.group(1)
+        return f'https://t.me/s/{channel}'
+    
+    # @channel format
+    if identifier.startswith('@'):
+        channel = identifier[1:]
+        return f'https://t.me/s/{channel}'
+    
+    # Plain channel name
+    if re.match(r'^[a-zA-Z][a-zA-Z0-9_]{3,}$', identifier):
+        return f'https://t.me/s/{identifier}'
+    
+    # Fallback: assume it's a channel name
+    return f'https://t.me/s/{identifier}'
+
+
+def extract_channel_from_public_url(url: str) -> str:
+    """Extract channel name from normalized public URL."""
+    match = re.search(r't\.me/s/([^/\s?]+)', url)
+    return match.group(1) if match else ''
 
 
 # --- Base Adapter ---
@@ -232,6 +288,280 @@ class TelegramChannelAdapter(BaseSourceAdapter):
         """Extract first URL from text."""
         match = re.search(r'https?://\S+', text or '')
         return match.group(0) if match else None
+
+
+# --- Telegram Public Channel Adapter (No Bot Required) ---
+
+class TelegramPublicAdapter(BaseSourceAdapter):
+    """
+    Adapter for Telegram public channels WITHOUT bot token.
+    
+    Fetches posts from the public web preview at https://t.me/s/<channel>.
+    No bot token required, no channel join required.
+    
+    Limitations:
+        - Only works for PUBLIC channels
+        - Only fetches ~20 most recent posts
+        - May be rate-limited by Telegram
+        - HTML parsing may break if Telegram changes their format
+    
+    Identifier formats:
+        - @channel
+        - channel
+        - t.me/channel
+        - https://t.me/channel
+        - https://t.me/s/channel
+    """
+    
+    DEFAULT_TIMEOUT = 15
+    DEFAULT_USER_AGENT = 'Mozilla/5.0 (compatible; JobAlertBot/1.0)'
+    
+    def __init__(self, source: JobSource):
+        super().__init__(source)
+        self.public_url = normalize_telegram_public_url(source.identifier)
+        self.channel_name = extract_channel_from_public_url(self.public_url)
+    
+    def test_connection(self) -> Dict[str, Any]:
+        """Test public channel accessibility."""
+        try:
+            resp = requests.get(
+                self.public_url,
+                headers={'User-Agent': self.DEFAULT_USER_AGENT},
+                timeout=self.DEFAULT_TIMEOUT,
+                allow_redirects=True
+            )
+            
+            if resp.status_code == 200:
+                # Check if it's actually a channel page (has tgme_channel_info)
+                if 'tgme_channel_info' in resp.text or 'tgme_widget_message' in resp.text:
+                    # Try to extract channel title
+                    title_match = re.search(
+                        r'<meta\s+property="og:title"\s+content="([^"]+)"',
+                        resp.text
+                    )
+                    channel_title = title_match.group(1) if title_match else self.channel_name
+                    
+                    return {
+                        'success': True,
+                        'message': f'Public channel accessible: {channel_title}',
+                        'details': {
+                            'channel_name': self.channel_name,
+                            'channel_title': channel_title,
+                            'public_url': self.public_url,
+                            'no_bot_required': True,
+                        }
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'message': 'Page accessible but does not appear to be a Telegram channel',
+                        'details': {
+                            'url': self.public_url,
+                            'hint': 'Make sure the channel is public and the name is correct'
+                        }
+                    }
+            elif resp.status_code == 404:
+                return {
+                    'success': False,
+                    'message': f'Channel not found: {self.channel_name}',
+                    'details': {'status_code': 404}
+                }
+            else:
+                return {
+                    'success': False,
+                    'message': f'Error accessing channel: HTTP {resp.status_code}',
+                    'details': {'status_code': resp.status_code}
+                }
+        
+        except requests.Timeout:
+            return {'success': False, 'message': 'Connection timeout'}
+        except requests.RequestException as e:
+            return {'success': False, 'message': f'Request error: {str(e)}'}
+    
+    def fetch_posts(self, limit: int = 25) -> List[Dict[str, Any]]:
+        """
+        Fetch posts from Telegram public channel.
+        
+        Parses the HTML from https://t.me/s/<channel> to extract recent posts.
+        """
+        try:
+            resp = requests.get(
+                self.public_url,
+                headers={'User-Agent': self.DEFAULT_USER_AGENT},
+                timeout=self.DEFAULT_TIMEOUT
+            )
+            
+            if resp.status_code != 200:
+                logger.warning(f"Telegram public fetch failed: {resp.status_code}")
+                return []
+            
+            return self._parse_posts(resp.text, limit)
+        
+        except requests.Timeout:
+            logger.error(f"Timeout fetching {self.public_url}")
+            return []
+        except Exception as e:
+            logger.error(f"Error fetching Telegram public channel: {e}")
+            return []
+    
+    def _parse_posts(self, html: str, limit: int) -> List[Dict[str, Any]]:
+        """
+        Parse posts from Telegram public channel HTML.
+        
+        The t.me/s/<channel> page contains posts in div.tgme_widget_message elements.
+        Each post has:
+        - data-post attribute: "channel/post_id"
+        - div.tgme_widget_message_text: post text content
+        - div.tgme_widget_message_link_preview: link preview if any
+        """
+        results = []
+        seen_ids = set()
+        
+        # Find all message blocks
+        # Pattern matches the entire message widget block
+        message_pattern = re.compile(
+            r'<div[^>]*class="[^"]*tgme_widget_message_wrap[^"]*"[^>]*>.*?'
+            r'data-post="([^"]+)".*?'
+            r'</div>\s*</div>\s*</div>',
+            re.DOTALL | re.IGNORECASE
+        )
+        
+        # Simpler approach: find all data-post attributes and their corresponding text
+        post_pattern = re.compile(
+            r'data-post="([^"]+)"',
+            re.IGNORECASE
+        )
+        
+        # Find all post IDs first
+        post_ids = post_pattern.findall(html)
+        
+        for post_id in post_ids:
+            if post_id in seen_ids:
+                continue
+            seen_ids.add(post_id)
+            
+            # Extract the message block for this post
+            # Look for the text content near this post ID
+            post_block = self._extract_post_block(html, post_id)
+            if not post_block:
+                continue
+            
+            # Extract text content
+            text = self._extract_text(post_block)
+            if not text or len(text.strip()) < 10:
+                continue
+            
+            # Extract any links
+            links = self._extract_links(post_block)
+            primary_link = links[0] if links else f'https://t.me/{post_id}'
+            
+            # Generate permalink
+            permalink = f'https://t.me/{post_id}'
+            
+            # Use post ID for external_id (channel/post_number)
+            external_id = f"tgpub-{post_id.replace('/', '-')}"
+            
+            # Compute content hash for dedupe
+            content_hash = hashlib.md5(text.encode()).hexdigest()[:16]
+            
+            results.append({
+                'source': 'telegram_public',
+                'source_id': self.source.id,
+                'external_id': external_id,
+                'title': text.split('\n')[0][:255].strip(),
+                'company': f'@{self.channel_name}',
+                'description': text,
+                'link': primary_link,
+                'permalink': permalink,
+                'raw_data': {
+                    'post_id': post_id,
+                    'links': links,
+                    'content_hash': content_hash,
+                }
+            })
+            
+            if len(results) >= limit:
+                break
+        
+        logger.info(f"Parsed {len(results)} posts from @{self.channel_name}")
+        return results
+    
+    def _extract_post_block(self, html: str, post_id: str) -> Optional[str]:
+        """Extract the HTML block for a specific post."""
+        # Find the position of this post ID
+        escaped_id = re.escape(post_id)
+        pattern = re.compile(
+            rf'<div[^>]*data-post="{escaped_id}"[^>]*>.*?'
+            r'<div[^>]*class="[^"]*tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>',
+            re.DOTALL | re.IGNORECASE
+        )
+        
+        match = pattern.search(html)
+        if match:
+            return match.group(0)
+        
+        # Fallback: extract a window around the post ID
+        pos = html.find(f'data-post="{post_id}"')
+        if pos == -1:
+            return None
+        
+        start = max(0, pos - 500)
+        end = min(len(html), pos + 3000)
+        return html[start:end]
+    
+    def _extract_text(self, block: str) -> str:
+        """Extract text content from post block."""
+        # Try to find text in tgme_widget_message_text
+        text_pattern = re.compile(
+            r'<div[^>]*class="[^"]*tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>',
+            re.DOTALL | re.IGNORECASE
+        )
+        
+        match = text_pattern.search(block)
+        if match:
+            text_html = match.group(1)
+        else:
+            text_html = block
+        
+        # Remove HTML tags but preserve newlines from <br>
+        text = re.sub(r'<br\s*/?>', '\n', text_html, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', '', text)
+        
+        # Decode HTML entities
+        text = text.replace('&amp;', '&')
+        text = text.replace('&lt;', '<')
+        text = text.replace('&gt;', '>')
+        text = text.replace('&quot;', '"')
+        text = text.replace('&#39;', "'")
+        text = text.replace('&nbsp;', ' ')
+        
+        # Clean up whitespace
+        text = re.sub(r'\n\s*\n', '\n\n', text)
+        text = text.strip()
+        
+        return text
+    
+    def _extract_links(self, block: str) -> List[str]:
+        """Extract all URLs from post block."""
+        # Find href links
+        href_pattern = re.compile(r'href="(https?://[^"]+)"', re.IGNORECASE)
+        links = href_pattern.findall(block)
+        
+        # Also find plain text URLs
+        url_pattern = re.compile(r'https?://[^\s<>"\']+')
+        text_links = url_pattern.findall(block)
+        
+        # Combine and dedupe, filter out t.me links (those are internal)
+        all_links = []
+        seen = set()
+        for link in links + text_links:
+            # Clean up link
+            link = link.rstrip('.,;:)')
+            if link not in seen and 't.me/' not in link:
+                seen.add(link)
+                all_links.append(link)
+        
+        return all_links
 
 
 # --- Website Adapter ---
@@ -509,6 +839,7 @@ def get_adapter(source: JobSource) -> BaseSourceAdapter:
     """Get appropriate adapter for source type."""
     adapters = {
         SourceType.TELEGRAM_CHANNEL.value: TelegramChannelAdapter,
+        SourceType.TELEGRAM_PUBLIC.value: TelegramPublicAdapter,
         SourceType.WEBSITE.value: WebsiteAdapter,
         SourceType.LINKEDIN_RECRUITER.value: LinkedInRecruiterAdapter,
     }

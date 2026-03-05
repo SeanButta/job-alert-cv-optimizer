@@ -448,9 +448,30 @@
         
         <!-- Sources Tab -->
         <div id="sources" class="tab-content">
-            <!-- Add Telegram Channel -->
+            <!-- Add Telegram Public Channel (No Bot Required) -->
             <div class="section">
-                <h2>📱 Add Telegram Channel</h2>
+                <h2>📱 Add Telegram Public Channel <span class="badge badge-success" style="font-size: 0.7rem;">No Bot Required</span></h2>
+                <div class="source-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Channel Username or Link</label>
+                            <input type="text" id="telegram-public-identifier" placeholder="@jobchannel, t.me/jobchannel, or https://t.me/s/jobchannel">
+                        </div>
+                        <div class="form-group">
+                            <label>Display Name (optional)</label>
+                            <input type="text" id="telegram-public-name" placeholder="My Job Channel">
+                        </div>
+                    </div>
+                    <button class="btn btn-success" onclick="addSource('telegram_public')">+ Add Public Channel</button>
+                    <p style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--success);">
+                        ✅ Works with any public Telegram channel. No bot token needed!
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Add Telegram Channel (Bot-based) -->
+            <div class="section">
+                <h2>🤖 Add Telegram Channel (Bot Mode)</h2>
                 <div class="source-form">
                     <div class="form-row">
                         <div class="form-group">
@@ -462,9 +483,9 @@
                             <input type="text" id="telegram-name" placeholder="My Job Channel">
                         </div>
                     </div>
-                    <button class="btn btn-primary" onclick="addSource('telegram_channel')">+ Add Channel</button>
+                    <button class="btn btn-primary" onclick="addSource('telegram_channel')">+ Add Channel (Bot)</button>
                     <p style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted);">
-                        ⚠️ Bot must be added to the channel first. Set TELEGRAM_BOT_TOKEN env var.
+                        ⚠️ Requires bot to be added to channel. Set TELEGRAM_BOT_TOKEN env var.
                     </p>
                 </div>
             </div>
@@ -531,7 +552,8 @@
                             {% for source in sources %}
                             <tr id="source-row-{{ source.id }}">
                                 <td>
-                                    {% if source.type == 'telegram_channel' %}📱
+                                    {% if source.type == 'telegram_channel' %}🤖
+                                    {% elif source.type == 'telegram_public' %}📱
                                     {% elif source.type == 'website' %}🌐
                                     {% elif source.type == 'linkedin_recruiter' %}👔
                                     {% endif %}
@@ -702,10 +724,22 @@
             setTimeout(() => toast.remove(), 3000);
         }
         
-        // Add source (Telegram or Website)
+        // Add source (Telegram, Telegram Public, or Website)
         async function addSource(type) {
-            const identifier = document.getElementById(`${type === 'telegram_channel' ? 'telegram' : 'website'}-identifier`).value.trim();
-            const name = document.getElementById(`${type === 'telegram_channel' ? 'telegram' : 'website'}-name`).value.trim();
+            let idField, nameField;
+            if (type === 'telegram_channel') {
+                idField = 'telegram-identifier';
+                nameField = 'telegram-name';
+            } else if (type === 'telegram_public') {
+                idField = 'telegram-public-identifier';
+                nameField = 'telegram-public-name';
+            } else {
+                idField = 'website-identifier';
+                nameField = 'website-name';
+            }
+            
+            const identifier = document.getElementById(idField).value.trim();
+            const name = document.getElementById(nameField).value.trim();
             
             if (!identifier) {
                 showToast('Please enter an identifier', 'error');

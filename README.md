@@ -154,12 +154,13 @@ Access the mobile-friendly dashboard at `/dashboard`:
 
 JSON API available at `/api/dashboard`.
 
-## Phase 3 Features: User-Configurable Sources
+## Phase 3 & 4 Features: User-Configurable Sources
 
 ### Job Source Types
 
 | Type | Description | Polling | Notes |
 |------|-------------|---------|-------|
+| `telegram_public` | **Telegram public channels** | Active | **No bot required!** ✅ |
 | `telegram_channel` | Telegram channels/groups | Active | Requires bot in channel |
 | `website` | Web pages with job listings | Active | Basic HTML parsing scaffold |
 | `linkedin_recruiter` | LinkedIn recruiter tracking | Passive | Tags jobs from other sources |
@@ -199,7 +200,43 @@ curl -X POST http://127.0.0.1:8000/api/sources/1/test
 curl -X DELETE http://127.0.0.1:8000/api/sources/1
 ```
 
-### Telegram Channel Source
+### Telegram Public Channel Source (Recommended) ✅
+
+**No bot token required!** This adapter fetches posts directly from the public web preview.
+
+**Setup:**
+1. Add any public Telegram channel in the dashboard
+2. That's it! No bot needed.
+
+**Supported identifier formats:**
+- `@channelname`
+- `channelname`
+- `t.me/channelname`
+- `https://t.me/channelname`
+- `https://t.me/s/channelname` (canonical format)
+
+All formats are automatically normalized to `https://t.me/s/<channel>`.
+
+**Limitations:**
+- Only works with **public** channels
+- Fetches ~20 most recent posts per poll
+- May be rate-limited by Telegram (use reasonable poll intervals)
+- HTML parsing may break if Telegram changes their format
+
+**Example API calls:**
+```bash
+# Add a public channel
+curl -X POST http://127.0.0.1:8000/api/sources \
+  -H "Content-Type: application/json" \
+  -d '{"type": "telegram_public", "identifier": "@python_jobs"}'
+
+# Test connectivity
+curl -X POST http://127.0.0.1:8000/api/sources/1/test
+```
+
+### Telegram Channel Source (Bot Mode)
+
+For private channels or when you need real-time updates via webhooks.
 
 **Setup:**
 1. Create a Telegram bot via @BotFather
@@ -306,10 +343,10 @@ Optional LLM-based match reranking (disabled by default):
 | File | Purpose |
 |------|---------|
 | `app/adapters/ingestion.py` | Legacy Telegram adapter |
-| `app/adapters/source_adapters.py` | **NEW:** Source adapters for all source types |
-| `app/api/sources.py` | **NEW:** Source CRUD API |
-| `app/models/sources.py` | **NEW:** JobSource data model |
-| `app/services/source_poller.py` | **NEW:** Background source polling worker |
+| `app/adapters/source_adapters.py` | Source adapters for all source types (includes `TelegramPublicAdapter`) |
+| `app/api/sources.py` | Source CRUD API |
+| `app/models/sources.py` | JobSource data model (includes `telegram_public` type) |
+| `app/services/source_poller.py` | Background source polling worker |
 | `app/services/matching.py` | Customize scoring logic |
 | `app/services/reranker.py` | Tune LLM prompts |
 | `app/services/notifier.py` | Add notification channels |

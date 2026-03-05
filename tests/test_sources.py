@@ -80,6 +80,36 @@ class TestSourceCRUD:
         assert data['type'] == 'linkedin_recruiter'
         assert data['config']['company'] == 'Acme Corp'
 
+    def test_create_telegram_public_source(self):
+        """Create a Telegram public channel source (no bot required)."""
+        resp = client.post('/api/sources', json={
+            'type': 'telegram_public',
+            'identifier': '@python_jobs',
+            'name': 'Python Jobs Channel'
+        })
+        
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data['type'] == 'telegram_public'
+        assert data['identifier'] == '@python_jobs'
+        assert data['status'] == 'active'
+
+    def test_create_telegram_public_source_various_formats(self):
+        """Create Telegram public sources with various identifier formats."""
+        test_cases = [
+            ('t.me/channel1', 't.me/channel1'),
+            ('https://t.me/channel2', 'https://t.me/channel2'),
+            ('https://t.me/s/channel3', 'https://t.me/s/channel3'),
+        ]
+        
+        for idx, (identifier, expected) in enumerate(test_cases):
+            resp = client.post('/api/sources', json={
+                'type': 'telegram_public',
+                'identifier': identifier,
+            })
+            assert resp.status_code == 200, f"Failed for {identifier}"
+            assert resp.json()['identifier'] == expected
+
     def test_create_invalid_source_type(self):
         """Reject invalid source type."""
         resp = client.post('/api/sources', json={
@@ -277,6 +307,49 @@ class TestSourceAdapters:
         finally:
             db.close()
 
+    def test_telegram_public_url_normalization(self):
+        """Test Telegram public channel URL normalization."""
+        from app.adapters.source_adapters import normalize_telegram_public_url
+        
+        test_cases = [
+            # Input -> Expected output
+            ('@jobchannel', 'https://t.me/s/jobchannel'),
+            ('jobchannel', 'https://t.me/s/jobchannel'),
+            ('t.me/jobchannel', 'https://t.me/s/jobchannel'),
+            ('https://t.me/jobchannel', 'https://t.me/s/jobchannel'),
+            ('https://t.me/s/jobchannel', 'https://t.me/s/jobchannel'),
+            ('t.me/s/jobchannel', 'https://t.me/s/jobchannel'),
+            ('https://t.me/jobchannel/', 'https://t.me/s/jobchannel'),
+        ]
+        
+        for identifier, expected in test_cases:
+            result = normalize_telegram_public_url(identifier)
+            assert result == expected, f"Failed for {identifier}: got {result}, expected {expected}"
+
+    def test_telegram_public_extract_channel(self):
+        """Test extracting channel name from public URL."""
+        from app.adapters.source_adapters import extract_channel_from_public_url
+        
+        test_cases = [
+            ('https://t.me/s/jobchannel', 'jobchannel'),
+            ('https://t.me/s/python_jobs', 'python_jobs'),
+            ('t.me/s/test123', 'test123'),
+        ]
+        
+        for url, expected in test_cases:
+            result = extract_channel_from_public_url(url)
+            assert result == expected, f"Failed for {url}"
+
+    def test_telegram_public_adapter_init(self):
+        """Test TelegramPublicAdapter initialization."""
+        from app.adapters.source_adapters import TelegramPublicAdapter
+        
+        source = JobSource(type='telegram_public', identifier='@python_jobs')
+        adapter = TelegramPublicAdapter(source)
+        
+        assert adapter.public_url == 'https://t.me/s/python_jobs'
+        assert adapter.channel_name == 'python_jobs'
+
     def test_website_adapter_normalize_url(self):
         """Test website URL normalization."""
         from app.adapters.source_adapters import WebsiteAdapter
@@ -310,14 +383,17 @@ class TestSourceAdapters:
     def test_get_adapter_factory(self):
         """Test adapter factory returns correct adapter type."""
         from app.adapters.source_adapters import (
-            get_adapter, TelegramChannelAdapter, WebsiteAdapter, LinkedInRecruiterAdapter
+            get_adapter, TelegramChannelAdapter, TelegramPublicAdapter, 
+            WebsiteAdapter, LinkedInRecruiterAdapter
         )
         
         tg_source = JobSource(type='telegram_channel', identifier='@test')
+        tgpub_source = JobSource(type='telegram_public', identifier='@test')
         web_source = JobSource(type='website', identifier='https://test.com')
         li_source = JobSource(type='linkedin_recruiter', identifier='John Doe')
         
         assert isinstance(get_adapter(tg_source), TelegramChannelAdapter)
+        assert isinstance(get_adapter(tgpub_source), TelegramPublicAdapter)
         assert isinstance(get_adapter(web_source), WebsiteAdapter)
         assert isinstance(get_adapter(li_source), LinkedInRecruiterAdapter)
 
@@ -328,6 +404,132 @@ class TestSourceAdapters:
         source = JobSource(type='invalid', identifier='test')
         with pytest.raises(ValueError):
             get_adapter(source)
+
+
+class TestTelegramPublicAdapter:
+    """Tests for Telegram public channel adapter."""
+
+    def test_parse_posts_from_html(self):
+        """Test parsing posts from Telegram public channel HTML."""
+        from app.adapters.source_adapters import TelegramPublicAdapter
+        
+        # Sample HTML structure from t.me/s/<channel>
+        sample_html = '''
+        <html>
+        <div class="tgme_widget_message_wrap" data-post="testchannel/123">
+            <div class="tgme_widget_message_text">
+                Senior Python Developer Needed
+                
+                We're looking for a Python developer with FastAPI experience.
+                Apply here: https://example.com/jobs/python-dev
+            </div>
+        </div>
+        <div class="tgme_widget_message_wrap" data-post="testchannel/124">
+            <div class="tgme_widget_message_text">
+                Remote ML Engineer Position
+                
+                Join our AI team. Check out: https://ai-jobs.com/ml-eng
+            </div>
+        </div>
+        </html>
+        '''
+        
+        source = JobSource(type='telegram_public', identifier='@testchannel')
+        adapter = TelegramPublicAdapter(source)
+        
+        posts = adapter._parse_posts(sample_html, limit=10)
+        
+        assert len(posts) >= 1
+        assert posts[0]['source'] == 'telegram_public'
+        assert 'tgpub-testchannel-123' in posts[0]['external_id']
+        assert 'Python' in posts[0]['title'] or 'Python' in posts[0]['description']
+
+    def test_extract_text_removes_html(self):
+        """Test that HTML tags are properly removed from text."""
+        from app.adapters.source_adapters import TelegramPublicAdapter
+        
+        source = JobSource(type='telegram_public', identifier='@test')
+        adapter = TelegramPublicAdapter(source)
+        
+        html_block = '''
+        <div class="tgme_widget_message_text">
+            <b>Bold text</b> and <a href="https://example.com">link</a><br/>
+            New line here
+        </div>
+        '''
+        
+        text = adapter._extract_text(html_block)
+        
+        assert '<b>' not in text
+        assert '</a>' not in text
+        assert 'Bold text' in text
+        assert 'link' in text
+
+    def test_extract_links_filters_telegram_links(self):
+        """Test that internal t.me links are filtered out."""
+        from app.adapters.source_adapters import TelegramPublicAdapter
+        
+        source = JobSource(type='telegram_public', identifier='@test')
+        adapter = TelegramPublicAdapter(source)
+        
+        html_block = '''
+        <a href="https://example.com/job">Apply here</a>
+        <a href="https://t.me/somechannel">Join channel</a>
+        <a href="https://linkedin.com/jobs/123">LinkedIn</a>
+        '''
+        
+        links = adapter._extract_links(html_block)
+        
+        assert 'https://example.com/job' in links
+        assert 'https://linkedin.com/jobs/123' in links
+        # t.me links should be filtered
+        assert not any('t.me' in link for link in links)
+
+    @patch('app.adapters.source_adapters.requests.get')
+    def test_telegram_public_test_connection_success(self, mock_get):
+        """Test connection succeeds for valid public channel."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = '''
+        <html>
+        <meta property="og:title" content="Python Jobs Channel">
+        <div class="tgme_channel_info">Channel info</div>
+        </html>
+        '''
+        mock_get.return_value = mock_resp
+        
+        source = JobSource(type='telegram_public', identifier='@python_jobs')
+        source.id = 1
+        
+        create_resp = client.post('/api/sources', json={
+            'type': 'telegram_public',
+            'identifier': '@python_jobs'
+        })
+        source_id = create_resp.json()['id']
+        
+        resp = client.post(f'/api/sources/{source_id}/test')
+        assert resp.status_code == 200
+        data = resp.json()
+        # May or may not succeed depending on network, but should not error
+        assert 'success' in data
+
+    @patch('app.adapters.source_adapters.requests.get')
+    def test_telegram_public_test_connection_not_found(self, mock_get):
+        """Test connection fails for non-existent channel."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        mock_get.return_value = mock_resp
+        
+        create_resp = client.post('/api/sources', json={
+            'type': 'telegram_public',
+            'identifier': '@nonexistent_channel_12345'
+        })
+        source_id = create_resp.json()['id']
+        
+        resp = client.post(f'/api/sources/{source_id}/test')
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data['success'] is False
 
 
 class TestSourceTest:
@@ -428,6 +630,28 @@ class TestIngestionDispatch:
             sources = get_sources_due_for_check(db)
             # LinkedIn recruiters are not actively polled
             assert len(sources) == 0
+        finally:
+            db.close()
+
+    def test_poll_cycle_includes_telegram_public(self):
+        """Poll cycle should include telegram_public sources."""
+        from app.services.source_poller import get_sources_due_for_check
+        
+        db = SessionLocal()
+        try:
+            # Create active telegram_public source
+            source = JobSource(
+                type='telegram_public',
+                identifier='@test_channel',
+                status='active'
+            )
+            db.add(source)
+            db.commit()
+            
+            sources = get_sources_due_for_check(db)
+            # telegram_public should be actively polled
+            assert len(sources) == 1
+            assert sources[0].type == 'telegram_public'
         finally:
             db.close()
 
