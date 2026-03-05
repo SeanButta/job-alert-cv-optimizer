@@ -50,6 +50,10 @@ class JobPost(Base):
     external_id: Mapped[str] = mapped_column(String(255), unique=True)
     title: Mapped[str] = mapped_column(String(255))
     company: Mapped[str] = mapped_column(String(255), default='')
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    remote_type: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)  # remote | hybrid | onsite
+    pay_band: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    timezone: Mapped[str | None] = mapped_column(String(100), nullable=True, default=None)
     description: Mapped[str] = mapped_column(Text)
     link: Mapped[str] = mapped_column(String(1000))
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

@@ -7,11 +7,13 @@ def sample_telegram_posts():
     return [
         {
             'source': 'telegram', 'external_id': 'tg-1', 'title': 'Backend Python Engineer', 'company': 'Acme',
+            'location': 'Chicago, IL', 'remote_type': 'hybrid', 'pay_band': '$130k-$165k', 'timezone': 'America/Chicago',
             'description': 'Looking for Python, FastAPI, SQL, communication skills',
             'link': 'https://example.com/jobs/1'
         },
         {
             'source': 'telegram', 'external_id': 'tg-2', 'title': 'Solidity Engineer', 'company': 'ChainCo',
+            'location': 'Remote', 'remote_type': 'remote', 'pay_band': '$120k-$180k', 'timezone': 'UTC',
             'description': 'Smart contracts, solidity, web3',
             'link': 'https://example.com/jobs/2'
         }

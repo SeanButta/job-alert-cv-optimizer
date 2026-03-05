@@ -135,6 +135,11 @@ def get_dashboard_data():
                 Alert.status,
                 User.email.label('user_email'),
                 JobPost.title.label('job_title'),
+                JobPost.company.label('company'),
+                JobPost.location.label('location'),
+                JobPost.remote_type.label('remote_type'),
+                JobPost.pay_band.label('pay_band'),
+                JobPost.timezone.label('timezone'),
             )
             .join(User, Alert.user_id == User.id)
             .join(Match, Alert.match_id == Match.id)
@@ -149,6 +154,11 @@ def get_dashboard_data():
                 'status': a.status,
                 'user_email': a.user_email,
                 'job_title': a.job_title,
+                'company': a.company,
+                'location': a.location,
+                'remote_type': a.remote_type,
+                'pay_band': a.pay_band,
+                'timezone': a.timezone,
             }
             for a in db.execute(alerts_query).all()
         ]

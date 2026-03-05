@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, Query
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
+from sqlalchemy import select, text
 from app.db.database import Base, engine, SessionLocal
 from app.models.models import User, Resume, ResumeProfile, Preference, JobPost, Match, Alert, GeneratedDoc
 from app.models.sources import JobSource  # Import to register model
@@ -27,6 +27,23 @@ from app.api.resumes import router as resumes_router
 
 app = FastAPI(title='Job Alert CV Optimizer')
 Base.metadata.create_all(bind=engine)
+
+
+def _ensure_jobpost_columns_sqlite():
+    # Lightweight migration guard for existing sqlite DBs
+    with engine.begin() as conn:
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(job_posts)"))}
+        if 'location' not in cols:
+            conn.execute(text("ALTER TABLE job_posts ADD COLUMN location VARCHAR(255)"))
+        if 'remote_type' not in cols:
+            conn.execute(text("ALTER TABLE job_posts ADD COLUMN remote_type VARCHAR(50)"))
+        if 'pay_band' not in cols:
+            conn.execute(text("ALTER TABLE job_posts ADD COLUMN pay_band VARCHAR(255)"))
+        if 'timezone' not in cols:
+            conn.execute(text("ALTER TABLE job_posts ADD COLUMN timezone VARCHAR(100)"))
+
+
+_ensure_jobpost_columns_sqlite()
 
 # Include routers
 app.include_router(dashboard_router)
@@ -136,7 +153,11 @@ def run_demo():
                 source=p['source'],
                 external_id=p['external_id'],
                 title=p['title'],
-                company=p['company'],
+                company=p.get('company', ''),
+                location=p.get('location'),
+                remote_type=p.get('remote_type'),
+                pay_band=p.get('pay_band'),
+                timezone=p.get('timezone'),
                 description=p['description'],
                 link=p['link'],
                 content_hash=content_hash,

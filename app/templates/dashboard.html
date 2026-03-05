@@ -1097,7 +1097,12 @@
                                 <th>Channel</th>
                                 <th>Status</th>
                                 <th>User</th>
-                                <th>Job</th>
+                                <th>Role</th>
+                                <th>Company</th>
+                                <th>Location</th>
+                                <th>Remote</th>
+                                <th>Pay</th>
+                                <th>Timezone</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1111,6 +1116,11 @@
                                 </td>
                                 <td>{{ alert.user_email }}</td>
                                 <td class="truncate">{{ alert.job_title }}</td>
+                                <td class="truncate">{{ alert.company or '-' }}</td>
+                                <td class="truncate">{{ alert.location or '-' }}</td>
+                                <td>{{ alert.remote_type or '-' }}</td>
+                                <td>{{ alert.pay_band or '-' }}</td>
+                                <td>{{ alert.timezone or '-' }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
