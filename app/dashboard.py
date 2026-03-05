@@ -1,0 +1,148 @@
+"""
+Mobile-friendly dashboard for Job Alert system.
+
+Shows recent jobs, matches, alerts, and queue status.
+"""
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import select, func, desc
+from pathlib import Path
+
+from app.db.database import SessionLocal
+from app.models.models import JobPost, Match, Alert, GeneratedDoc, User, NotificationTask
+from app.services.queue import get_queue_stats
+
+router = APIRouter()
+
+# Templates directory
+templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+
+
+def get_dashboard_data():
+    """Gather all data for dashboard display."""
+    db = SessionLocal()
+    try:
+        # Basic stats
+        total_jobs = db.scalar(select(func.count(JobPost.id))) or 0
+        total_matches = db.scalar(select(func.count(Match.id))) or 0
+        alerts_sent = db.scalar(
+            select(func.count(Alert.id)).where(Alert.status.in_(['sent', 'mock_sent', 'completed']))
+        ) or 0
+
+        # Queue stats
+        queue_stats = get_queue_stats(db)
+
+        # Recent jobs (last 20)
+        recent_jobs = list(db.scalars(
+            select(JobPost).order_by(desc(JobPost.created_at)).limit(20)
+        ).all())
+
+        # Recent matches with user/job info (last 20)
+        matches_query = (
+            select(
+                Match.id,
+                Match.score,
+                Match.explanation,
+                Match.llm_reranked,
+                Match.user_id,
+                Match.job_post_id,
+                User.email.label('user_email'),
+                JobPost.title.label('job_title'),
+            )
+            .join(User, Match.user_id == User.id)
+            .join(JobPost, Match.job_post_id == JobPost.id)
+            .order_by(desc(Match.id))
+            .limit(20)
+        )
+        recent_matches_raw = db.execute(matches_query).all()
+
+        # Get doc URLs for matches
+        match_ids = [m.id for m in recent_matches_raw]
+        docs = {
+            d.match_id: d.doc_url
+            for d in db.scalars(
+                select(GeneratedDoc).where(GeneratedDoc.match_id.in_(match_ids))
+            ).all()
+        } if match_ids else {}
+
+        recent_matches = [
+            {
+                'id': m.id,
+                'score': m.score,
+                'explanation': m.explanation,
+                'llm_reranked': m.llm_reranked,
+                'user_email': m.user_email,
+                'job_title': m.job_title,
+                'doc_url': docs.get(m.id),
+            }
+            for m in recent_matches_raw
+        ]
+
+        # Recent alerts with user/job info (last 30)
+        alerts_query = (
+            select(
+                Alert.id,
+                Alert.channel,
+                Alert.status,
+                User.email.label('user_email'),
+                JobPost.title.label('job_title'),
+            )
+            .join(User, Alert.user_id == User.id)
+            .join(Match, Alert.match_id == Match.id)
+            .join(JobPost, Match.job_post_id == JobPost.id)
+            .order_by(desc(Alert.id))
+            .limit(30)
+        )
+        recent_alerts = [
+            {
+                'id': a.id,
+                'channel': a.channel,
+                'status': a.status,
+                'user_email': a.user_email,
+                'job_title': a.job_title,
+            }
+            for a in db.execute(alerts_query).all()
+        ]
+
+        return {
+            'stats': {
+                'total_jobs': total_jobs,
+                'total_matches': total_matches,
+                'alerts_sent': alerts_sent,
+                'queue_pending': queue_stats.get('pending', 0) + queue_stats.get('retry_pending', 0),
+                'queue_failed': queue_stats.get('failed', 0) - queue_stats.get('retry_pending', 0),
+            },
+            'queue_stats': queue_stats,
+            'recent_jobs': recent_jobs,
+            'recent_matches': recent_matches,
+            'recent_alerts': recent_alerts,
+        }
+    finally:
+        db.close()
+
+
+@router.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    """Render mobile-friendly dashboard."""
+    data = get_dashboard_data()
+    return templates.TemplateResponse("dashboard.html", {"request": request, **data})
+
+
+@router.get("/api/dashboard")
+async def dashboard_api():
+    """JSON API endpoint for dashboard data."""
+    data = get_dashboard_data()
+    # Convert JobPost objects to dicts for JSON serialization
+    data['recent_jobs'] = [
+        {
+            'id': j.id,
+            'title': j.title,
+            'company': j.company,
+            'source': j.source,
+            'link': j.link,
+            'created_at': j.created_at.isoformat() if j.created_at else None,
+        }
+        for j in data['recent_jobs']
+    ]
+    return data

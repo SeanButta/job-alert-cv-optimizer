@@ -8,13 +8,28 @@ from app.services.matching import score_job
 from app.services.recommender import generate_cv_recommendations
 from app.services.docs import create_or_update_google_doc
 from app.services.notifier import build_alert, dispatch_all
+from app.services.dedupe import (
+    compute_content_hash,
+    compute_link_hash,
+    is_duplicate_job,
+    is_duplicate_alert,
+    compute_alert_idempotency_key,
+)
+from app.services.reranker import rerank_match
+from app.services.queue import enqueue_notification
+from app.dashboard import router as dashboard_router
 
 app = FastAPI(title='Job Alert CV Optimizer')
 Base.metadata.create_all(bind=engine)
 
+# Include dashboard routes
+app.include_router(dashboard_router)
+
+
 @app.get('/health')
 def health():
     return {'ok': True}
+
 
 @app.post('/seed')
 def seed():
@@ -22,7 +37,8 @@ def seed():
     try:
         if not db.scalar(select(User).where(User.email == 'demo@example.com')):
             u = User(email='demo@example.com', phone='+15555550123', telegram_chat_id='demo-chat')
-            db.add(u); db.flush()
+            db.add(u)
+            db.flush()
             db.add(Resume(user_id=u.id, content='5 years backend engineering, FastAPI, Python, APIs'))
             db.add(Preference(user_id=u.id, required_keywords='python,fastapi,sql', excluded_keywords='solidity', min_score=0.5))
             db.commit()
@@ -30,11 +46,26 @@ def seed():
     finally:
         db.close()
 
+
 @app.post('/run-demo')
 def run_demo():
-    db = SessionLocal(); sent = []
+    """
+    Main demo flow with Phase 2 enhancements:
+    - Strong dedupe (content_hash, link_hash)
+    - Idempotent alerts per user+job+channel
+    - Optional LLM reranking
+    - Queue-based notifications
+    """
+    db = SessionLocal()
+    sent = []
+    skipped_dedupe = []
+    use_queue = os.getenv('ENABLE_QUEUE_NOTIFICATIONS', 'false').lower() == 'true'
+
     try:
         user = db.scalar(select(User).where(User.email == 'demo@example.com'))
+        if not user:
+            return {'error': 'Run /seed first'}
+
         resume = db.scalar(select(Resume).where(Resume.user_id == user.id))
         pref = db.scalar(select(Preference).where(Preference.user_id == user.id))
 
@@ -42,34 +73,139 @@ def run_demo():
         posts = fetch_telegram_posts_real(limit=25) if use_real_ingest else sample_telegram_posts()
 
         for p in posts:
-            if db.scalar(select(JobPost).where(JobPost.external_id == p['external_id'])):
+            # Compute hashes for strong dedupe
+            content_hash = compute_content_hash(p['title'], p['description'], p['company'])
+            link_hash = compute_link_hash(p['link'])
+
+            # Check for duplicates (external_id, content_hash, or link_hash)
+            is_dup, dup_reason = is_duplicate_job(db, p['external_id'], content_hash, link_hash)
+            if is_dup:
+                skipped_dedupe.append({'external_id': p['external_id'], 'reason': dup_reason})
                 continue
 
-            job = JobPost(**p); db.add(job); db.flush()
-            score, explain = score_job(job.description, resume.content, pref.required_keywords, pref.excluded_keywords)
+            # Create job post with hashes
+            job = JobPost(
+                source=p['source'],
+                external_id=p['external_id'],
+                title=p['title'],
+                company=p['company'],
+                description=p['description'],
+                link=p['link'],
+                content_hash=content_hash,
+                link_hash=link_hash,
+            )
+            db.add(job)
+            db.flush()
+
+            # Score job
+            base_score, base_explain = score_job(
+                job.description, resume.content,
+                pref.required_keywords, pref.excluded_keywords
+            )
+
+            # Optional LLM reranking
+            score, explain, llm_reranked = rerank_match(
+                job.title, job.description,
+                resume.content,
+                base_score, base_explain,
+            )
+
             if score < pref.min_score:
                 continue
 
-            m = Match(user_id=user.id, job_post_id=job.id, score=score, explanation=explain)
-            db.add(m); db.flush()
+            # Create match
+            m = Match(
+                user_id=user.id,
+                job_post_id=job.id,
+                score=score,
+                explanation=explain,
+                llm_reranked=llm_reranked,
+            )
+            db.add(m)
+            db.flush()
 
+            # Generate CV recommendations and doc
             rec = generate_cv_recommendations(job.title, job.description, resume.content)
             doc_url = create_or_update_google_doc(user.id, rec, title=f'CV Tailor - {job.title}')
             gd = GeneratedDoc(user_id=user.id, match_id=m.id, doc_url=doc_url)
-            db.add(gd); db.flush()
+            db.add(gd)
+            db.flush()
 
+            # Build alert message
             msg = build_alert(job.title, job.link, score, doc_url)
-            deliveries = dispatch_all(
-                {'email': user.email, 'phone': user.phone, 'telegram_chat_id': user.telegram_chat_id},
-                msg,
-            )
 
-            for d in deliveries:
-                db.add(Alert(user_id=user.id, match_id=m.id, channel=d['channel'], status=d['status']))
+            # Dispatch alerts with idempotency
+            deliveries = []
+            channels = []
+            if user.email:
+                channels.append(('email', user.email))
+            if user.phone:
+                channels.append(('sms', user.phone))
+                channels.append(('whatsapp', user.phone))
+            if user.telegram_chat_id:
+                channels.append(('telegram', user.telegram_chat_id))
 
-            sent.append({'job': job.title, 'score': score, 'doc_url': doc_url, 'deliveries': deliveries})
+            for channel, target in channels:
+                # Check idempotency - prevent duplicate alerts
+                if is_duplicate_alert(db, user.id, job.id, channel):
+                    deliveries.append({'channel': channel, 'status': 'skipped_duplicate'})
+                    continue
+
+                # Create alert record with idempotency key
+                idempotency_key = compute_alert_idempotency_key(user.id, job.id, channel)
+                alert = Alert(
+                    user_id=user.id,
+                    match_id=m.id,
+                    channel=channel,
+                    status='queued',
+                    idempotency_key=idempotency_key,
+                )
+                db.add(alert)
+                db.flush()
+
+                if use_queue:
+                    # Enqueue for async processing
+                    enqueue_notification(db, alert.id, channel, target, msg)
+                    deliveries.append({'channel': channel, 'status': 'queued'})
+                else:
+                    # Sync dispatch (original behavior)
+                    from app.services.notifier import send_email, send_sms, send_telegram, send_whatsapp
+                    dispatchers = {
+                        'email': send_email,
+                        'sms': send_sms,
+                        'telegram': send_telegram,
+                        'whatsapp': send_whatsapp,
+                    }
+                    result = dispatchers[channel](target, msg)
+                    alert.status = result.get('status', 'unknown')
+                    deliveries.append(result)
+
+            sent.append({
+                'job': job.title,
+                'score': score,
+                'llm_reranked': llm_reranked,
+                'doc_url': doc_url,
+                'deliveries': deliveries,
+            })
 
         db.commit()
-        return {'matches_sent': len(sent), 'alerts': sent, 'real_ingest': use_real_ingest}
+        return {
+            'matches_sent': len(sent),
+            'alerts': sent,
+            'skipped_dedupe': skipped_dedupe,
+            'real_ingest': use_real_ingest,
+            'queue_mode': use_queue,
+        }
+    finally:
+        db.close()
+
+
+@app.get('/queue-stats')
+def queue_stats():
+    """Get notification queue statistics."""
+    from app.services.queue import get_queue_stats
+    db = SessionLocal()
+    try:
+        return get_queue_stats(db)
     finally:
         db.close()
