@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from app.db.database import Base, engine, SessionLocal
@@ -260,3 +260,30 @@ def queue_stats():
         return get_queue_stats(db)
     finally:
         db.close()
+
+
+@app.post('/api/test/sms')
+def test_sms(
+    phone: str = Query(..., description='Target phone in E.164 format, e.g. +15551234567'),
+    message: str = Query('Test SMS from Job Alert CV Optimizer ✅'),
+    dry_run: bool = Query(False, description='When true, returns payload only and does not send'),
+):
+    """Quick connector verification endpoint for Twilio SMS."""
+    from app.services.notifier import send_sms
+
+    if dry_run:
+        return {
+            'ok': True,
+            'mode': 'dry_run',
+            'channel': 'sms',
+            'target': phone,
+            'message': message,
+            'note': 'No SMS sent. Set dry_run=false to attempt delivery.'
+        }
+
+    result = send_sms(phone, message)
+    return {
+        'ok': result.get('status') in ('sent', 'mock_sent'),
+        'result': result,
+        'hint': 'For real delivery, set ENABLE_REAL_NOTIFICATIONS=true and Twilio env vars.'
+    }
