@@ -140,6 +140,7 @@ def get_dashboard_data():
                 JobPost.remote_type.label('remote_type'),
                 JobPost.pay_band.label('pay_band'),
                 JobPost.timezone.label('timezone'),
+                Match.score.label('match_score'),
             )
             .join(User, Alert.user_id == User.id)
             .join(Match, Alert.match_id == Match.id)
@@ -159,6 +160,7 @@ def get_dashboard_data():
                 'remote_type': a.remote_type,
                 'pay_band': a.pay_band,
                 'timezone': a.timezone,
+                'match_score': a.match_score,
             }
             for a in db.execute(alerts_query).all()
         ]

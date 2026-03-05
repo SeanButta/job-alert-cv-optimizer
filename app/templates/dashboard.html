@@ -1103,6 +1103,7 @@
                                 <th>Remote</th>
                                 <th>Pay</th>
                                 <th>Timezone</th>
+                                <th>Score</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1121,6 +1122,13 @@
                                 <td>{{ alert.remote_type or '-' }}</td>
                                 <td>{{ alert.pay_band or '-' }}</td>
                                 <td>{{ alert.timezone or '-' }}</td>
+                                <td>
+                                    {% if alert.match_score is not none %}
+                                    <span class="score {% if alert.match_score >= 0.8 %}score-high{% elif alert.match_score >= 0.5 %}score-med{% else %}score-low{% endif %}">
+                                        {{ "%.0f"|format(alert.match_score * 100) }}%
+                                    </span>
+                                    {% else %}-{% endif %}
+                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>
