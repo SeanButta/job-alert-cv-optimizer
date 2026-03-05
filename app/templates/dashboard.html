@@ -68,6 +68,10 @@
             gap: 0.8rem;
         }
 
+        [data-theme="dark"] h1 {
+            background: linear-gradient(135deg, #1a2539 0%, #131d30 100%);
+        }
+
         .brand {
             display: flex;
             align-items: center;
@@ -199,6 +203,21 @@
         .score-med { color: var(--warning); }
         .score-low { color: var(--danger); }
         
+        code {
+            background: #eef3ff;
+            color: #274a9a;
+            border: 1px solid #d9e4ff;
+            border-radius: 8px;
+            padding: 0.15rem 0.45rem;
+            font-size: 0.8rem;
+        }
+
+        [data-theme="dark"] code {
+            background: #0f1b32;
+            color: #9ec0ff;
+            border-color: #28406f;
+        }
+
         a {
             color: var(--primary);
             text-decoration: none;
@@ -236,6 +255,10 @@
             border-radius: 10px;
             height: 56px;
             background: #e9eef7;
+        }
+
+        [data-theme="dark"] .loading-shimmer {
+            background: #15233a;
         }
 
         .loading-shimmer::after {
@@ -314,6 +337,11 @@
             padding: 1rem;
             margin-bottom: 1rem;
         }
+
+        [data-theme="dark"] .source-form {
+            background: #101a2c;
+            border: 1px solid var(--border);
+        }
         
         .form-group {
             margin-bottom: 0.75rem;
@@ -336,6 +364,16 @@
             border: 1px solid var(--border);
             border-radius: 4px;
             font-size: 0.875rem;
+            background: var(--card);
+            color: var(--text);
+        }
+
+        [data-theme="dark"] .form-group input,
+        [data-theme="dark"] .form-group textarea,
+        [data-theme="dark"] .form-group select {
+            background: #0f1728;
+            color: #e8eefb;
+            border-color: #2b3b59;
         }
         
         .form-group textarea {
@@ -1124,14 +1162,14 @@
                 dropzone.addEventListener(ev, (e) => {
                     e.preventDefault();
                     dropzone.style.borderColor = 'var(--primary)';
-                    dropzone.style.background = '#eef4ff';
+                    dropzone.style.background = 'color-mix(in srgb, var(--primary) 14%, var(--card) 86%)';
                 });
             });
             ['dragleave', 'drop'].forEach(ev => {
                 dropzone.addEventListener(ev, (e) => {
                     e.preventDefault();
                     dropzone.style.borderColor = 'var(--border)';
-                    dropzone.style.background = '#f8fafc';
+                    dropzone.style.background = 'var(--card)';
                 });
             });
             dropzone.addEventListener('drop', (e) => {
