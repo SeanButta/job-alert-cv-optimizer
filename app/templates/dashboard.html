@@ -19,6 +19,15 @@
             --shadow: 0 8px 24px rgba(17, 38, 78, 0.08);
             --radius: 14px;
         }
+
+        [data-theme="dark"] {
+            --bg: #0d1320;
+            --card: #141d2d;
+            --text: #e8eefb;
+            --muted: #9aa9c2;
+            --border: #26344d;
+            --shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+        }
         
         * {
             box-sizing: border-box;
@@ -30,8 +39,14 @@
             font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: radial-gradient(circle at 10% -20%, #ffffff 0%, var(--bg) 45%, #edf2fb 100%);
             color: var(--text);
-            line-height: 1.5;
+            line-height: 1.45;
+            letter-spacing: 0.01em;
             padding: 1rem;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+
+        [data-theme="dark"] body {
+            background: radial-gradient(circle at 10% -20%, #152038 0%, var(--bg) 45%, #09101c 100%);
         }
         
         .container {
@@ -58,6 +73,23 @@
             align-items: center;
             gap: 0.7rem;
             font-weight: 700;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .theme-btn {
+            border: 1px solid var(--border);
+            background: var(--card);
+            color: var(--muted);
+            border-radius: 10px;
+            padding: 0.45rem 0.7rem;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
         }
 
         .brand-mark {
@@ -193,6 +225,30 @@
             font-style: italic;
             padding: 1rem;
             text-align: center;
+            border: 1px dashed var(--border);
+            border-radius: 10px;
+            background: color-mix(in srgb, var(--card) 85%, var(--bg) 15%);
+        }
+
+        .loading-shimmer {
+            position: relative;
+            overflow: hidden;
+            border-radius: 10px;
+            height: 56px;
+            background: #e9eef7;
+        }
+
+        .loading-shimmer::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            transform: translateX(-100%);
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.7), transparent);
+            animation: shimmer 1.2s infinite;
+        }
+
+        @keyframes shimmer {
+            100% { transform: translateX(100%); }
         }
         
         .refresh-btn {
@@ -559,18 +615,21 @@
     <div class="container">
         <h1>
             <span class="brand"><span class="brand-mark">JA</span> Job Alert Intelligence</span>
-            <button class="refresh-btn" onclick="location.reload()">↻ Refresh</button>
+            <span class="header-actions">
+                <button class="theme-btn" id="theme-toggle" onclick="toggleTheme()">🌙 Dark</button>
+                <button class="refresh-btn" onclick="location.reload()">↻ Refresh</button>
+            </span>
         </h1>
         
         <!-- Tab Navigation -->
         <div class="tabs">
-            <button class="tab-btn active" data-tab="overview">📊 Overview</button>
-            <button class="tab-btn" data-tab="platforms">🌐 Platforms</button>
-            <button class="tab-btn" data-tab="sources">📡 Sources</button>
-            <button class="tab-btn" data-tab="resumes">🧾 Resumes</button>
-            <button class="tab-btn" data-tab="jobs">💼 Jobs</button>
-            <button class="tab-btn" data-tab="matches">🎯 Matches</button>
-            <button class="tab-btn" data-tab="alerts">🔔 Alerts</button>
+            <button class="tab-btn active" data-tab="overview">Overview</button>
+            <button class="tab-btn" data-tab="platforms">Platforms</button>
+            <button class="tab-btn" data-tab="sources">Sources</button>
+            <button class="tab-btn" data-tab="resumes">Resumes</button>
+            <button class="tab-btn" data-tab="jobs">Jobs</button>
+            <button class="tab-btn" data-tab="matches">Matches</button>
+            <button class="tab-btn" data-tab="alerts">Alerts</button>
         </div>
         
         <!-- Overview Tab -->
@@ -686,7 +745,7 @@
                 </p>
                 <div id="platforms-list">
                     <!-- Populated by JS -->
-                    <div class="empty">Loading platforms...</div>
+                    <div class="loading-shimmer"></div>
                 </div>
             </div>
         </div>
@@ -1027,6 +1086,21 @@
     </div>
     
     <script>
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            const btn = document.getElementById('theme-toggle');
+            if (btn) btn.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+        }
+
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+            const next = current === 'dark' ? 'light' : 'dark';
+            localStorage.setItem('jai-theme', next);
+            applyTheme(next);
+        }
+
+        applyTheme(localStorage.getItem('jai-theme') || 'light');
+
         // Tab switching
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
