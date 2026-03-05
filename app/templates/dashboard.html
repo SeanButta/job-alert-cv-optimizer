@@ -613,6 +613,30 @@
                     </div>
                 </div>
             </div>
+
+            <!-- SMS Connector Test -->
+            <div class="section">
+                <h2>📲 Test SMS Delivery</h2>
+                <div class="source-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Phone (E.164)</label>
+                            <input type="text" id="sms-test-phone" placeholder="+15551234567">
+                        </div>
+                        <div class="form-group">
+                            <label>Message</label>
+                            <input type="text" id="sms-test-message" placeholder="SMS test from job alert">
+                        </div>
+                    </div>
+                    <div class="action-btns">
+                        <button class="btn btn-outline" onclick="sendTestSms(true)">Dry Run</button>
+                        <button class="btn btn-primary" onclick="sendTestSms(false)">Send Real SMS</button>
+                    </div>
+                    <p style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted);">
+                        Real SMS requires ENABLE_REAL_NOTIFICATIONS=true and Twilio env vars.
+                    </p>
+                </div>
+            </div>
         </div>
         
         <!-- Platforms Tab -->
@@ -1075,6 +1099,28 @@
             }
         }
         
+        async function sendTestSms(dryRun) {
+            const phone = document.getElementById('sms-test-phone')?.value?.trim();
+            const message = document.getElementById('sms-test-message')?.value?.trim() || 'SMS test from job alert';
+            if (!phone) {
+                showToast('Enter a phone number in E.164 format', 'error');
+                return;
+            }
+            const params = new URLSearchParams({ phone, message, dry_run: String(dryRun) });
+            try {
+                const resp = await fetch(`/api/test/sms?${params.toString()}`, { method: 'POST' });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    showToast(data.detail || 'SMS test failed', 'error');
+                    return;
+                }
+                const status = data?.result?.status || data?.mode || 'ok';
+                showToast(`SMS test: ${status}`);
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
+
         // Add source (Telegram, Telegram Public, or Website)
         async function addSource(type) {
             let idField, nameField;
