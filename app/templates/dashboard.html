@@ -662,8 +662,7 @@
         <!-- Tab Navigation -->
         <div class="tabs">
             <button class="tab-btn active" data-tab="overview">Overview</button>
-            <button class="tab-btn" data-tab="platforms">Platforms</button>
-            <button class="tab-btn" data-tab="sources">Sources</button>
+            <button class="tab-btn" data-tab="sources">Settings</button>
             <button class="tab-btn" data-tab="resumes">Resumes</button>
             <button class="tab-btn" data-tab="jobs">Jobs</button>
             <button class="tab-btn" data-tab="matches">Matches</button>
@@ -774,22 +773,26 @@
             </div>
         </div>
         
-        <!-- Platforms Tab -->
-        <div id="platforms" class="tab-content">
+        <!-- Legacy Platforms Tab (kept hidden; settings tab is unified) -->
+        <div id="platforms" class="tab-content" style="display:none;">
             <div class="section">
                 <h2>🌐 Job Platform Sources</h2>
-                <p style="font-size: 0.8rem; color: var(--muted); margin-bottom: 1rem;">
-                    Toggle platforms on/off for job ingestion. Platforms are ranked by data quality (best first).
-                </p>
-                <div id="platforms-list">
-                    <!-- Populated by JS -->
-                    <div class="loading-shimmer"></div>
-                </div>
+                <div id="platforms-list-legacy"></div>
             </div>
         </div>
         
-        <!-- Sources Tab -->
+        <!-- Settings Tab (Platforms + Sources) -->
         <div id="sources" class="tab-content">
+            <div class="section">
+                <h2>⚙️ Job Source Configuration</h2>
+                <p style="font-size: 0.8rem; color: var(--muted); margin-bottom: 1rem;">
+                    Manage both platform toggles and source inputs in one place.
+                </p>
+                <div id="platforms-list">
+                    <div class="loading-shimmer"></div>
+                </div>
+            </div>
+
             <!-- Add Telegram Public Channel (No Bot Required) -->
             <div class="section">
                 <h2>📱 Add Telegram Public Channel <span class="badge badge-success" style="font-size: 0.7rem;">No Bot Required</span></h2>
@@ -1165,8 +1168,8 @@
                 btn.classList.add('active');
                 document.getElementById(btn.dataset.tab).classList.add('active');
                 
-                // Load platforms when tab is clicked
-                if (btn.dataset.tab === 'platforms') {
+                // Load platforms when settings tab is clicked
+                if (btn.dataset.tab === 'sources') {
                     loadPlatforms();
                 }
             });
