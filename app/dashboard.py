@@ -1,8 +1,9 @@
 """
 Mobile-friendly dashboard for Job Alert system.
 
-Shows recent jobs, matches, alerts, and queue status.
+Shows recent jobs, matches, alerts, sources, and queue status.
 """
+import json
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -11,6 +12,7 @@ from pathlib import Path
 
 from app.db.database import SessionLocal
 from app.models.models import JobPost, Match, Alert, GeneratedDoc, User, NotificationTask
+from app.models.sources import JobSource, SourceStatus
 from app.services.queue import get_queue_stats
 
 router = APIRouter()
@@ -32,6 +34,36 @@ def get_dashboard_data():
 
         # Queue stats
         queue_stats = get_queue_stats(db)
+
+        # Source stats
+        active_sources = db.scalar(
+            select(func.count(JobSource.id)).where(JobSource.status == SourceStatus.ACTIVE.value)
+        ) or 0
+        total_sources = db.scalar(select(func.count(JobSource.id))) or 0
+        error_sources = db.scalar(
+            select(func.count(JobSource.id)).where(JobSource.status == SourceStatus.ERROR.value)
+        ) or 0
+
+        source_stats = {
+            'active': active_sources,
+            'total': total_sources,
+            'error': error_sources,
+        }
+
+        # Get all sources for display
+        sources_raw = list(db.scalars(
+            select(JobSource).order_by(desc(JobSource.created_at))
+        ).all())
+        sources = []
+        for s in sources_raw:
+            data = s.to_dict()
+            # Parse JSON config if present
+            if data.get('config'):
+                try:
+                    data['config'] = json.loads(data['config'])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            sources.append(data)
 
         # Recent jobs (last 20)
         recent_jobs = list(db.scalars(
@@ -114,6 +146,8 @@ def get_dashboard_data():
                 'queue_failed': queue_stats.get('failed', 0) - queue_stats.get('retry_pending', 0),
             },
             'queue_stats': queue_stats,
+            'source_stats': source_stats,
+            'sources': sources,
             'recent_jobs': recent_jobs,
             'recent_matches': recent_matches,
             'recent_alerts': recent_alerts,

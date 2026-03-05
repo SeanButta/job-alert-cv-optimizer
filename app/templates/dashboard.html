@@ -124,6 +124,7 @@
         .badge-warning { background: #fef3c7; color: var(--warning); }
         .badge-danger { background: #fee2e2; color: var(--danger); }
         .badge-info { background: #dbeafe; color: var(--primary); }
+        .badge-muted { background: #f1f5f9; color: var(--muted); }
         
         .score {
             font-weight: 600;
@@ -176,6 +177,156 @@
             opacity: 0.9;
         }
         
+        /* Tab navigation */
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        .tab-btn {
+            background: var(--card);
+            border: 1px solid var(--border);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }
+        
+        .tab-btn:hover {
+            border-color: var(--primary);
+        }
+        
+        .tab-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* Source management forms */
+        .source-form {
+            background: #f8fafc;
+            border-radius: 6px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .form-group {
+            margin-bottom: 0.75rem;
+        }
+        
+        .form-group label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--muted);
+            margin-bottom: 0.25rem;
+            text-transform: uppercase;
+        }
+        
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 0.875rem;
+        }
+        
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+        
+        .form-row .form-group {
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+        
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+        
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+        
+        .btn:hover {
+            opacity: 0.9;
+        }
+        
+        .btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+        }
+        
+        .action-btns {
+            display: flex;
+            gap: 0.25rem;
+        }
+        
+        /* Toast notifications */
+        .toast {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            color: white;
+            font-size: 0.875rem;
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+        }
+        
+        .toast.success { background: var(--success); }
+        .toast.error { background: var(--danger); }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
         @media (max-width: 600px) {
             body {
                 padding: 0.5rem;
@@ -208,6 +359,16 @@
             .truncate {
                 max-width: 120px;
             }
+            
+            .tabs {
+                overflow-x: auto;
+                flex-wrap: nowrap;
+                padding-bottom: 0.5rem;
+            }
+            
+            .tab-btn {
+                white-space: nowrap;
+            }
         }
     </style>
 </head>
@@ -218,162 +379,439 @@
             <button class="refresh-btn" onclick="location.reload()">↻ Refresh</button>
         </h1>
         
-        <!-- Stats Grid -->
-        <div class="stats-grid">
-            <div class="stat-card primary">
-                <div class="label">Total Jobs</div>
-                <div class="value">{{ stats.total_jobs }}</div>
-            </div>
-            <div class="stat-card success">
-                <div class="label">Matches</div>
-                <div class="value">{{ stats.total_matches }}</div>
-            </div>
-            <div class="stat-card success">
-                <div class="label">Alerts Sent</div>
-                <div class="value">{{ stats.alerts_sent }}</div>
-            </div>
-            <div class="stat-card warning">
-                <div class="label">Queue Pending</div>
-                <div class="value">{{ stats.queue_pending }}</div>
-            </div>
-            <div class="stat-card danger">
-                <div class="label">Queue Failed</div>
-                <div class="value">{{ stats.queue_failed }}</div>
-            </div>
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="overview">📊 Overview</button>
+            <button class="tab-btn" data-tab="sources">📡 Sources</button>
+            <button class="tab-btn" data-tab="jobs">💼 Jobs</button>
+            <button class="tab-btn" data-tab="matches">🎯 Matches</button>
+            <button class="tab-btn" data-tab="alerts">🔔 Alerts</button>
         </div>
         
-        <!-- Recent Jobs -->
-        <div class="section">
-            <h2>Recent Jobs ({{ recent_jobs|length }})</h2>
-            {% if recent_jobs %}
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Title</th>
-                            <th>Company</th>
-                            <th>Source</th>
-                            <th>Date</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for job in recent_jobs %}
-                        <tr>
-                            <td class="truncate"><a href="{{ job.link }}" target="_blank">{{ job.title }}</a></td>
-                            <td class="truncate">{{ job.company }}</td>
-                            <td><span class="badge badge-info">{{ job.source }}</span></td>
-                            <td class="timestamp">{{ job.created_at.strftime('%m/%d %H:%M') if job.created_at else '-' }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="empty">No jobs ingested yet</div>
-            {% endif %}
-        </div>
-        
-        <!-- Recent Matches -->
-        <div class="section">
-            <h2>Recent Matches ({{ recent_matches|length }})</h2>
-            {% if recent_matches %}
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Job</th>
-                            <th>Score</th>
-                            <th>User</th>
-                            <th>Doc</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for match in recent_matches %}
-                        <tr>
-                            <td class="truncate">{{ match.job_title }}</td>
-                            <td>
-                                <span class="score {% if match.score >= 0.8 %}score-high{% elif match.score >= 0.5 %}score-med{% else %}score-low{% endif %}">
-                                    {{ "%.0f"|format(match.score * 100) }}%
-                                </span>
-                                {% if match.llm_reranked %}<span class="badge badge-info">LLM</span>{% endif %}
-                            </td>
-                            <td>{{ match.user_email }}</td>
-                            <td>
-                                {% if match.doc_url %}
-                                <a href="{{ match.doc_url }}" target="_blank">View</a>
-                                {% else %}-{% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="empty">No matches yet</div>
-            {% endif %}
-        </div>
-        
-        <!-- Recent Alerts -->
-        <div class="section">
-            <h2>Alert Deliveries ({{ recent_alerts|length }})</h2>
-            {% if recent_alerts %}
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Channel</th>
-                            <th>Status</th>
-                            <th>User</th>
-                            <th>Job</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for alert in recent_alerts %}
-                        <tr>
-                            <td><span class="badge badge-info">{{ alert.channel }}</span></td>
-                            <td>
-                                <span class="badge {% if alert.status in ['sent', 'mock_sent', 'completed'] %}badge-success{% elif alert.status == 'queued' %}badge-warning{% else %}badge-danger{% endif %}">
-                                    {{ alert.status }}
-                                </span>
-                            </td>
-                            <td>{{ alert.user_email }}</td>
-                            <td class="truncate">{{ alert.job_title }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="empty">No alerts sent yet</div>
-            {% endif %}
-        </div>
-        
-        <!-- Queue Status -->
-        <div class="section">
-            <h2>Queue Status</h2>
+        <!-- Overview Tab -->
+        <div id="overview" class="tab-content active">
+            <!-- Stats Grid -->
             <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="label">Pending</div>
-                    <div class="value">{{ queue_stats.pending }}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Processing</div>
-                    <div class="value">{{ queue_stats.processing }}</div>
+                <div class="stat-card primary">
+                    <div class="label">Total Jobs</div>
+                    <div class="value">{{ stats.total_jobs }}</div>
                 </div>
                 <div class="stat-card success">
-                    <div class="label">Completed</div>
-                    <div class="value">{{ queue_stats.completed }}</div>
+                    <div class="label">Matches</div>
+                    <div class="value">{{ stats.total_matches }}</div>
                 </div>
-                <div class="stat-card danger">
-                    <div class="label">Failed</div>
-                    <div class="value">{{ queue_stats.failed }}</div>
+                <div class="stat-card success">
+                    <div class="label">Alerts Sent</div>
+                    <div class="value">{{ stats.alerts_sent }}</div>
                 </div>
                 <div class="stat-card warning">
-                    <div class="label">Retry Pending</div>
-                    <div class="value">{{ queue_stats.retry_pending }}</div>
+                    <div class="label">Queue Pending</div>
+                    <div class="value">{{ stats.queue_pending }}</div>
                 </div>
+                <div class="stat-card danger">
+                    <div class="label">Queue Failed</div>
+                    <div class="value">{{ stats.queue_failed }}</div>
+                </div>
+                <div class="stat-card primary">
+                    <div class="label">Active Sources</div>
+                    <div class="value">{{ source_stats.active }}</div>
+                </div>
+            </div>
+            
+            <!-- Queue Status -->
+            <div class="section">
+                <h2>Queue Status</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="label">Pending</div>
+                        <div class="value">{{ queue_stats.pending }}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Processing</div>
+                        <div class="value">{{ queue_stats.processing }}</div>
+                    </div>
+                    <div class="stat-card success">
+                        <div class="label">Completed</div>
+                        <div class="value">{{ queue_stats.completed }}</div>
+                    </div>
+                    <div class="stat-card danger">
+                        <div class="label">Failed</div>
+                        <div class="value">{{ queue_stats.failed }}</div>
+                    </div>
+                    <div class="stat-card warning">
+                        <div class="label">Retry Pending</div>
+                        <div class="value">{{ queue_stats.retry_pending }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Sources Tab -->
+        <div id="sources" class="tab-content">
+            <!-- Add Telegram Channel -->
+            <div class="section">
+                <h2>📱 Add Telegram Channel</h2>
+                <div class="source-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Channel Username or Link</label>
+                            <input type="text" id="telegram-identifier" placeholder="@jobchannel or t.me/jobchannel">
+                        </div>
+                        <div class="form-group">
+                            <label>Display Name (optional)</label>
+                            <input type="text" id="telegram-name" placeholder="My Job Channel">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="addSource('telegram_channel')">+ Add Channel</button>
+                    <p style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted);">
+                        ⚠️ Bot must be added to the channel first. Set TELEGRAM_BOT_TOKEN env var.
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Add Website -->
+            <div class="section">
+                <h2>🌐 Add Website Source</h2>
+                <div class="source-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Website URL</label>
+                            <input type="text" id="website-identifier" placeholder="https://example.com/jobs">
+                        </div>
+                        <div class="form-group">
+                            <label>Display Name (optional)</label>
+                            <input type="text" id="website-name" placeholder="Example Jobs Page">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="addSource('website')">+ Add Website</button>
+                    <p style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted);">
+                        ⚠️ Basic HTML parsing. Some sites may block automated access.
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Add LinkedIn Recruiter -->
+            <div class="section">
+                <h2>👔 Track LinkedIn Recruiter</h2>
+                <div class="source-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>LinkedIn Profile URL or Name</label>
+                            <input type="text" id="linkedin-identifier" placeholder="linkedin.com/in/recruiter or John Doe">
+                        </div>
+                        <div class="form-group">
+                            <label>Company (optional)</label>
+                            <input type="text" id="linkedin-company" placeholder="Acme Corp">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="addLinkedInRecruiter()">+ Track Recruiter</button>
+                    <p style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted);">
+                        ✅ Compliance-safe: Tags jobs from other sources, no LinkedIn scraping.
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Sources List -->
+            <div class="section">
+                <h2>Active Sources ({{ sources|length }})</h2>
+                {% if sources %}
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Name</th>
+                                <th>Status</th>
+                                <th>Last Check</th>
+                                <th>Errors</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for source in sources %}
+                            <tr id="source-row-{{ source.id }}">
+                                <td>
+                                    {% if source.type == 'telegram_channel' %}📱
+                                    {% elif source.type == 'website' %}🌐
+                                    {% elif source.type == 'linkedin_recruiter' %}👔
+                                    {% endif %}
+                                    {{ source.type }}
+                                </td>
+                                <td class="truncate">{{ source.name or source.identifier }}</td>
+                                <td>
+                                    <span class="badge {% if source.status == 'active' %}badge-success{% elif source.status == 'inactive' %}badge-muted{% else %}badge-danger{% endif %}">
+                                        {{ source.status }}
+                                    </span>
+                                </td>
+                                <td class="timestamp">{{ source.last_checked[:16] if source.last_checked else 'Never' }}</td>
+                                <td>
+                                    {% if source.error_count > 0 %}
+                                    <span class="badge badge-danger">{{ source.error_count }}</span>
+                                    {% else %}-{% endif %}
+                                </td>
+                                <td class="action-btns">
+                                    {% if source.status == 'active' %}
+                                    <button class="btn btn-outline btn-sm" onclick="toggleSource({{ source.id }}, 'deactivate')">⏸️</button>
+                                    {% else %}
+                                    <button class="btn btn-success btn-sm" onclick="toggleSource({{ source.id }}, 'activate')">▶️</button>
+                                    {% endif %}
+                                    <button class="btn btn-outline btn-sm" onclick="testSource({{ source.id }})">🔍</button>
+                                    <button class="btn btn-danger btn-sm" onclick="deleteSource({{ source.id }})">🗑️</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="empty">No sources configured yet. Add one above!</div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Jobs Tab -->
+        <div id="jobs" class="tab-content">
+            <div class="section">
+                <h2>Recent Jobs ({{ recent_jobs|length }})</h2>
+                {% if recent_jobs %}
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Company</th>
+                                <th>Source</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for job in recent_jobs %}
+                            <tr>
+                                <td class="truncate"><a href="{{ job.link }}" target="_blank">{{ job.title }}</a></td>
+                                <td class="truncate">{{ job.company }}</td>
+                                <td><span class="badge badge-info">{{ job.source }}</span></td>
+                                <td class="timestamp">{{ job.created_at.strftime('%m/%d %H:%M') if job.created_at else '-' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="empty">No jobs ingested yet</div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Matches Tab -->
+        <div id="matches" class="tab-content">
+            <div class="section">
+                <h2>Recent Matches ({{ recent_matches|length }})</h2>
+                {% if recent_matches %}
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Job</th>
+                                <th>Score</th>
+                                <th>User</th>
+                                <th>Doc</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for match in recent_matches %}
+                            <tr>
+                                <td class="truncate">{{ match.job_title }}</td>
+                                <td>
+                                    <span class="score {% if match.score >= 0.8 %}score-high{% elif match.score >= 0.5 %}score-med{% else %}score-low{% endif %}">
+                                        {{ "%.0f"|format(match.score * 100) }}%
+                                    </span>
+                                    {% if match.llm_reranked %}<span class="badge badge-info">LLM</span>{% endif %}
+                                </td>
+                                <td>{{ match.user_email }}</td>
+                                <td>
+                                    {% if match.doc_url %}
+                                    <a href="{{ match.doc_url }}" target="_blank">View</a>
+                                    {% else %}-{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="empty">No matches yet</div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Alerts Tab -->
+        <div id="alerts" class="tab-content">
+            <div class="section">
+                <h2>Alert Deliveries ({{ recent_alerts|length }})</h2>
+                {% if recent_alerts %}
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Channel</th>
+                                <th>Status</th>
+                                <th>User</th>
+                                <th>Job</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for alert in recent_alerts %}
+                            <tr>
+                                <td><span class="badge badge-info">{{ alert.channel }}</span></td>
+                                <td>
+                                    <span class="badge {% if alert.status in ['sent', 'mock_sent', 'completed'] %}badge-success{% elif alert.status == 'queued' %}badge-warning{% else %}badge-danger{% endif %}">
+                                        {{ alert.status }}
+                                    </span>
+                                </td>
+                                <td>{{ alert.user_email }}</td>
+                                <td class="truncate">{{ alert.job_title }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="empty">No alerts sent yet</div>
+                {% endif %}
             </div>
         </div>
     </div>
+    
+    <script>
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.tab).classList.add('active');
+            });
+        });
+        
+        // Toast notification
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        // Add source (Telegram or Website)
+        async function addSource(type) {
+            const identifier = document.getElementById(`${type === 'telegram_channel' ? 'telegram' : 'website'}-identifier`).value.trim();
+            const name = document.getElementById(`${type === 'telegram_channel' ? 'telegram' : 'website'}-name`).value.trim();
+            
+            if (!identifier) {
+                showToast('Please enter an identifier', 'error');
+                return;
+            }
+            
+            try {
+                const resp = await fetch('/api/sources', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type, identifier, name: name || null })
+                });
+                
+                if (resp.ok) {
+                    showToast('Source added successfully!');
+                    location.reload();
+                } else {
+                    const error = await resp.json();
+                    showToast(error.detail || 'Failed to add source', 'error');
+                }
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
+        
+        // Add LinkedIn recruiter with config
+        async function addLinkedInRecruiter() {
+            const identifier = document.getElementById('linkedin-identifier').value.trim();
+            const company = document.getElementById('linkedin-company').value.trim();
+            
+            if (!identifier) {
+                showToast('Please enter a LinkedIn profile or name', 'error');
+                return;
+            }
+            
+            try {
+                const resp = await fetch('/api/sources', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'linkedin_recruiter',
+                        identifier,
+                        name: identifier,
+                        config: company ? { company } : null
+                    })
+                });
+                
+                if (resp.ok) {
+                    showToast('Recruiter tracking added!');
+                    location.reload();
+                } else {
+                    const error = await resp.json();
+                    showToast(error.detail || 'Failed to add recruiter', 'error');
+                }
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
+        
+        // Toggle source active/inactive
+        async function toggleSource(id, action) {
+            try {
+                const resp = await fetch(`/api/sources/${id}/${action}`, { method: 'POST' });
+                if (resp.ok) {
+                    showToast(`Source ${action}d!`);
+                    location.reload();
+                } else {
+                    showToast('Failed to update source', 'error');
+                }
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
+        
+        // Test source connectivity
+        async function testSource(id) {
+            try {
+                const resp = await fetch(`/api/sources/${id}/test`, { method: 'POST' });
+                const result = await resp.json();
+                
+                if (result.success) {
+                    showToast(`✅ ${result.message}`);
+                } else {
+                    showToast(`❌ ${result.message}`, 'error');
+                }
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
+        
+        // Delete source
+        async function deleteSource(id) {
+            if (!confirm('Delete this source?')) return;
+            
+            try {
+                const resp = await fetch(`/api/sources/${id}`, { method: 'DELETE' });
+                if (resp.ok) {
+                    showToast('Source deleted');
+                    document.getElementById(`source-row-${id}`).remove();
+                } else {
+                    showToast('Failed to delete source', 'error');
+                }
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
+    </script>
 </body>
 </html>
