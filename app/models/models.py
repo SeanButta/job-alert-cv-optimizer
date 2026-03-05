@@ -41,6 +41,8 @@ class Preference(Base):
     required_keywords: Mapped[str] = mapped_column(Text, default='')
     excluded_keywords: Mapped[str] = mapped_column(Text, default='')
     min_score: Mapped[float] = mapped_column(Float, default=0.5)
+    remote_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    preferred_locations: Mapped[str] = mapped_column(Text, default='')  # comma-separated
 
 
 class JobPost(Base):

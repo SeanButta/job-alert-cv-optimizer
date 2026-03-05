@@ -943,6 +943,24 @@
                 <p style="font-size: 0.8rem; color: var(--muted); margin-bottom: 1rem;">
                     Upload multiple resumes by job type. The matcher will use the active resume for that role category.
                 </p>
+
+                <div class="source-form" style="margin-bottom:0.9rem;">
+                    <h3 style="margin-bottom:0.5rem; font-size:0.9rem;">Location Preferences</h3>
+                    <div class="form-row">
+                        <div class="form-group" style="min-width:180px;">
+                            <label>Remote Only</label>
+                            <select id="pref-remote-only">
+                                <option value="false">No</option>
+                                <option value="true">Yes</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Preferred Locations (comma-separated)</label>
+                            <input type="text" id="pref-locations" placeholder="Chicago, New York City, San Francisco">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="saveResumePreferences()">Save Preferences</button>
+                </div>
                 <div class="source-form" style="border: 2px dashed var(--border);" id="resume-dropzone">
                     <div class="form-row">
                         <div class="form-group">
@@ -1159,6 +1177,7 @@
         }
 
         applyTheme(localStorage.getItem('jai-theme') || 'light');
+        loadResumePreferences();
 
         // Tab switching
         document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1171,6 +1190,9 @@
                 // Load platforms when settings tab is clicked
                 if (btn.dataset.tab === 'sources') {
                     loadPlatforms();
+                }
+                if (btn.dataset.tab === 'resumes') {
+                    loadResumePreferences();
                 }
             });
         });
@@ -1349,6 +1371,38 @@
             }
         }
         
+        async function loadResumePreferences() {
+            try {
+                const resp = await fetch('/api/resumes/preferences');
+                const data = await resp.json();
+                const remoteEl = document.getElementById('pref-remote-only');
+                const locEl = document.getElementById('pref-locations');
+                if (remoteEl) remoteEl.value = String(!!data.remote_only);
+                if (locEl) locEl.value = data.preferred_locations || '';
+            } catch (e) {
+                console.warn('Could not load preferences', e);
+            }
+        }
+
+        async function saveResumePreferences() {
+            const remoteOnly = document.getElementById('pref-remote-only')?.value === 'true';
+            const locations = document.getElementById('pref-locations')?.value || '';
+            try {
+                const resp = await fetch('/api/resumes/preferences', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ remote_only: remoteOnly, preferred_locations: locations })
+                });
+                if (!resp.ok) {
+                    showToast('Failed to save preferences', 'error');
+                    return;
+                }
+                showToast('Location preferences saved');
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
+
         async function uploadResume() {
             const fileInput = document.getElementById('resume-file');
             const name = document.getElementById('resume-name').value.trim();

@@ -43,7 +43,17 @@ def _ensure_jobpost_columns_sqlite():
             conn.execute(text("ALTER TABLE job_posts ADD COLUMN timezone VARCHAR(100)"))
 
 
+def _ensure_preference_columns_sqlite():
+    with engine.begin() as conn:
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(preferences)"))}
+        if 'remote_only' not in cols:
+            conn.execute(text("ALTER TABLE preferences ADD COLUMN remote_only BOOLEAN DEFAULT 0"))
+        if 'preferred_locations' not in cols:
+            conn.execute(text("ALTER TABLE preferences ADD COLUMN preferred_locations TEXT DEFAULT ''"))
+
+
 _ensure_jobpost_columns_sqlite()
+_ensure_preference_columns_sqlite()
 
 # Include routers
 app.include_router(dashboard_router)
@@ -181,6 +191,16 @@ def run_demo():
                 resume_text,
                 base_score, base_explain,
             )
+
+            # Apply preference gates: remote-only + preferred locations
+            if pref.remote_only and (job.remote_type or '').lower() != 'remote':
+                continue
+
+            if (pref.preferred_locations or '').strip():
+                preferred = [x.strip().lower() for x in pref.preferred_locations.split(',') if x.strip()]
+                loc = (job.location or '').lower()
+                if preferred and not any(p in loc for p in preferred):
+                    continue
 
             if score < pref.min_score:
                 continue

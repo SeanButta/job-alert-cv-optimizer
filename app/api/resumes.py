@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.db.database import SessionLocal, Base, engine
-from app.models.models import ResumeProfile, User
+from app.models.models import ResumeProfile, User, Preference
 from app.services.resume_parser import parse_resume_bytes, MAX_FILE_MB
 
 router = APIRouter(prefix="/api/resumes", tags=["resumes"])
@@ -18,6 +18,11 @@ def _ensure_tables():
 
 class SetActiveRequest(BaseModel):
     job_type: str
+
+
+class PreferenceUpdateRequest(BaseModel):
+    remote_only: bool = False
+    preferred_locations: str = ''
 
 
 @router.get("")
@@ -146,5 +151,48 @@ def delete_resume(resume_id: int):
             db.delete(row)
             db.commit()
         return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.get('/preferences')
+def get_resume_preferences():
+    _ensure_tables()
+    db = SessionLocal()
+    try:
+        user = db.scalar(select(User).where(User.email == 'demo@example.com'))
+        if not user:
+            return {'remote_only': False, 'preferred_locations': ''}
+        pref = db.scalar(select(Preference).where(Preference.user_id == user.id))
+        if not pref:
+            return {'remote_only': False, 'preferred_locations': ''}
+        return {
+            'remote_only': bool(pref.remote_only),
+            'preferred_locations': pref.preferred_locations or ''
+        }
+    finally:
+        db.close()
+
+
+@router.post('/preferences')
+def update_resume_preferences(payload: PreferenceUpdateRequest):
+    _ensure_tables()
+    db = SessionLocal()
+    try:
+        user = db.scalar(select(User).where(User.email == 'demo@example.com'))
+        if not user:
+            user = User(email='demo@example.com')
+            db.add(user)
+            db.flush()
+
+        pref = db.scalar(select(Preference).where(Preference.user_id == user.id))
+        if not pref:
+            pref = Preference(user_id=user.id)
+            db.add(pref)
+
+        pref.remote_only = payload.remote_only
+        pref.preferred_locations = payload.preferred_locations.strip()
+        db.commit()
+        return {'ok': True}
     finally:
         db.close()
