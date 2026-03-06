@@ -11,7 +11,7 @@ from sqlalchemy import select, func, desc
 from pathlib import Path
 
 from app.db.database import SessionLocal
-from app.models.models import JobPost, Match, Alert, GeneratedDoc, User, NotificationTask, ResumeProfile
+from app.models.models import JobPost, Match, Alert, GeneratedDoc, User, NotificationTask, ResumeProfile, ApplicationKitArtifact
 from app.models.sources import JobSource, SourceStatus
 from app.services.queue import get_queue_stats
 
@@ -127,6 +127,20 @@ def get_dashboard_data():
             for r in db.scalars(select(ResumeProfile).order_by(desc(ResumeProfile.created_at)).limit(50)).all()
         ]
 
+        # Recent application kit artifacts
+        recent_artifacts = [
+            {
+                'id': a.id,
+                'artifact_type': a.artifact_type,
+                'title': a.title,
+                'created_at': a.created_at.isoformat() if a.created_at else None,
+                'content': a.content,
+            }
+            for a in db.scalars(
+                select(ApplicationKitArtifact).order_by(desc(ApplicationKitArtifact.created_at)).limit(20)
+            ).all()
+        ]
+
         # Recent alerts with user/job info (last 30)
         alerts_query = (
             select(
@@ -180,6 +194,7 @@ def get_dashboard_data():
             'recent_matches': recent_matches,
             'recent_alerts': recent_alerts,
             'resumes': resumes,
+            'recent_artifacts': recent_artifacts,
         }
     finally:
         db.close()

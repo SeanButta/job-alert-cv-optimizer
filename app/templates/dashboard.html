@@ -666,6 +666,7 @@
             <button class="tab-btn" data-tab="matches">Matches</button>
             <button class="tab-btn" data-tab="jobs">Jobs</button>
             <button class="tab-btn" data-tab="resumes">Resumes</button>
+            <button class="tab-btn" data-tab="application-kit">Application Kit</button>
             <button class="tab-btn" data-tab="sources">Settings</button>
         </div>
         
@@ -1027,6 +1028,69 @@
                 </div>
                 {% else %}
                 <div class="empty">No resumes uploaded yet.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Application Kit Tab -->
+        <div id="application-kit" class="tab-content">
+            <div class="section">
+                <h2>📦 Application Kit Generator</h2>
+                <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.8rem;">Generate tailored resume, cover letter, and interview prep from a saved resume profile + target job listing.</p>
+                <div class="source-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Job Listing</label>
+                            <select id="ak-job-id">
+                                {% for job in recent_jobs %}
+                                <option value="{{ job.id }}">{{ job.title }} — {{ job.company }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Resume Profile</label>
+                            <select id="ak-resume-id">
+                                {% for r in resumes %}
+                                <option value="{{ r.id }}">{{ r.name }} ({{ r.job_type }}){% if r.is_active %} • active{% endif %}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label><input type="checkbox" id="ak-type-resume" checked> Tailored Resume</label>
+                        <label><input type="checkbox" id="ak-type-cover" checked> Cover Letter</label>
+                        <label><input type="checkbox" id="ak-type-interview" checked> Interview Prep</label>
+                    </div>
+                    <button class="btn btn-primary" onclick="generateApplicationKit()">Generate Application Kit</button>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Generated Artifacts</h2>
+                <div id="ak-output" class="empty">Generate artifacts to preview here.</div>
+            </div>
+
+            <div class="section">
+                <h2>Recent Application Kit History</h2>
+                {% if recent_artifacts and recent_artifacts|length > 0 %}
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Type</th><th>Title</th><th>Created</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for a in recent_artifacts %}
+                            <tr>
+                                <td><span class="badge badge-info">{{ a.artifact_type }}</span></td>
+                                <td class="truncate" title="{{ a.title }}">{{ a.title }}</td>
+                                <td class="timestamp">{{ a.created_at[:16] if a.created_at else '-' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="empty">No artifacts yet.</div>
                 {% endif %}
             </div>
         </div>
@@ -1460,6 +1524,52 @@
                 const row = document.getElementById(`resume-row-${id}`);
                 if (row) row.remove();
             } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
+
+        async function generateApplicationKit() {
+            const jobId = Number(document.getElementById('ak-job-id')?.value || 0);
+            const resumeId = Number(document.getElementById('ak-resume-id')?.value || 0);
+            const types = [];
+            if (document.getElementById('ak-type-resume')?.checked) types.push('resume');
+            if (document.getElementById('ak-type-cover')?.checked) types.push('cover_letter');
+            if (document.getElementById('ak-type-interview')?.checked) types.push('interview_prep');
+            if (!jobId || !types.length) {
+                showToast('Select a job and at least one artifact type', 'error');
+                return;
+            }
+
+            const output = document.getElementById('ak-output');
+            output.className = '';
+            output.innerHTML = 'Generating...';
+
+            try {
+                const resp = await fetch('/api/application-kit/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ job_post_id: jobId, resume_profile_id: resumeId || null, artifact_types: types })
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    output.className = 'empty';
+                    output.textContent = data.detail || 'Generation failed';
+                    showToast('Generation failed', 'error');
+                    return;
+                }
+
+                const cards = (data.artifacts || []).map(a => `
+                    <div class="source-form" style="margin-bottom:0.8rem;">
+                        <h3 style="margin-bottom:0.4rem;">${a.title}</h3>
+                        <div class="badge badge-info" style="margin-bottom:0.5rem;">${a.artifact_type}</div>
+                        <pre style="white-space:pre-wrap; max-height:320px; overflow:auto;">${a.content}</pre>
+                    </div>
+                `).join('');
+                output.innerHTML = cards || '<div class="empty">No artifacts generated.</div>';
+                showToast('Application Kit generated');
+            } catch (e) {
+                output.className = 'empty';
+                output.textContent = 'Network error';
                 showToast('Network error', 'error');
             }
         }

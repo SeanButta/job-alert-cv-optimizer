@@ -25,6 +25,7 @@ from app.dashboard import router as dashboard_router
 from app.api.sources import router as sources_router
 from app.api.platforms import router as platforms_router
 from app.api.resumes import router as resumes_router
+from app.api.application_kit import router as application_kit_router
 
 app = FastAPI(title='My Recruiting Agent')
 Base.metadata.create_all(bind=engine)
@@ -61,6 +62,7 @@ app.include_router(dashboard_router)
 app.include_router(sources_router)
 app.include_router(platforms_router)
 app.include_router(resumes_router)
+app.include_router(application_kit_router)
 
 
 @app.get('/health')

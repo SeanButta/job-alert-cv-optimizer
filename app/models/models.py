@@ -100,6 +100,18 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class ApplicationKitArtifact(Base):
+    __tablename__ = 'application_kit_artifacts'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
+    job_post_id: Mapped[int] = mapped_column(ForeignKey('job_posts.id'))
+    resume_profile_id: Mapped[int | None] = mapped_column(ForeignKey('resume_profiles.id'), nullable=True)
+    artifact_type: Mapped[str] = mapped_column(String(50))  # resume | cover_letter | interview_prep
+    title: Mapped[str] = mapped_column(String(255), default='Application Kit Artifact')
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class NotificationTask(Base):
     """SQLite-backed job queue for notification tasks with retry support."""
     __tablename__ = 'notification_tasks'
